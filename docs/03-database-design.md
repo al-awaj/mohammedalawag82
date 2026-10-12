@@ -85,9 +85,11 @@ PostgreSQL 16. الامتدادات: `pgcrypto` (UUID)، `citext` (البريد)
 
 حالات الحجز: `pending_provider_approval` (إن تطلبت الخدمة الموافقة) ← `awaiting_payment` ← `confirmed` ← `in_progress` ← `completed`، وفروع: `rejected`, `expired`, `cancelled_by_customer`, `cancelled_by_provider`, `cancelled_by_admin`, `no_show`. الحجز المؤقت هو صف `calendar_blocks` من نوع `hold` مرتبط بالحجز.
 
-## E. المالية (المراحل 6–7) 🧩 — انظر `05-financial-design.md`
+## E. المالية (المرحلة 6 ✅، التسويات والاستردادات في المرحلة 7 🧩) — انظر `05-financial-design.md`
 
-`payment_providers`, `payment_integrations`, `payment_method_rules`, `payments`, `payment_proofs`, `provider_webhook_events (UNIQUE(provider, external_event_id))`, `ledger_accounts`, `journal_entries`, `journal_lines`, `commission_rules`, `booking_commissions`, `provider_earnings`, `settlements`, `settlement_items`, `refunds`, `reconciliation_runs`, `reconciliation_items`.
+✅ `payment_integrations` (secret_ref فقط)، `payment_method_rules` (دولة × نوع خدمة × نموذج × طريقة → تكامل + صندوق)، `payments` (reported_amount / verified_amount، UNIQUE(customer, idempotency_key)، UNIQUE(integration, external_ref))، `payment_allocations` (الدفعة ↔ الحجوزات)، `payment_proofs`، `payment_status_events`، `provider_webhook_events` (UNIQUE(integration, external_event_id))، `ledger_accounts`، `journal_entries` (idempotency_key فريد، append-only)، `journal_lines` (أبعاد صاحب الخدمة/الحجز/الدفعة، مشغلات التوازن والحساب المفعل والعملة)، `commission_rules` (شروط غير قابلة للتعديل)، `booking_commissions` (لقطة)، `provider_earnings`، `provider_earning_events`.
+
+🧩 المرحلة 7: `settlements`, `settlement_items`, `refunds`, `reconciliation_runs`, `reconciliation_items`.
 
 ## F. النزاعات والإشعارات والعروض والتقييمات (المرحلة 8) 🧩
 

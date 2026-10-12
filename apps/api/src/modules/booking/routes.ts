@@ -52,9 +52,12 @@ function bookingSelect(audience: 'customer' | 'provider' | 'staff') {
       b.security_deposit_amount AS "securityDepositAmount", b.cancellation_policy AS "cancellationPolicy", b.terms_snapshot AS "termsSnapshot",
       b.requires_provider_approval AS "requiresProviderApproval", b.hold_expires_at AS "holdExpiresAt", b.approval_deadline AS "approvalDeadline",
       b.decision_reason AS "decisionReason", b.customer_notes AS "customerNotes", b.created_at AS "createdAt",
+      pd.paid AS "paidAmount", (b.total - pd.paid::numeric)::numeric(20,4)::text AS "remainingAmount",
       p.business_name AS "providerName", p.show_identity AS "_showIdentity", b.country_id AS "_countryId",
       ${customerContact}
-    FROM bookings b JOIN orders o ON o.id = b.order_id JOIN providers p ON p.id = b.provider_id JOIN users cu ON cu.id = b.customer_id`;
+    FROM bookings b JOIN orders o ON o.id = b.order_id JOIN providers p ON p.id = b.provider_id JOIN users cu ON cu.id = b.customer_id
+    CROSS JOIN LATERAL (SELECT coalesce(sum(a.verified_amount), 0)::numeric(20,4)::text AS paid FROM payment_allocations a
+                          JOIN payments py ON py.id = a.payment_id WHERE a.booking_id = b.id AND py.status = 'succeeded') pd`;
 }
 
 type Row = Record<string, unknown> & { _showIdentity?: boolean; _countryId?: string };
@@ -84,16 +87,20 @@ async function bookingHistory(exec: Executor, id: string) {
 }
 
 /** Totals per currency so amounts in different currencies are never summed together. */
-function totalsByCurrency(rows: { currency: string; total: string; upfrontAmount: string; status: string }[]) {
-  const acc: Record<string, { committed: bigint; upfront: bigint; count: number }> = {};
+function totalsByCurrency(rows: { currency: string; total: string; upfrontAmount: string; paidAmount: string; status: string }[]) {
+  const acc: Record<string, { committed: bigint; upfront: bigint; paid: bigint; count: number }> = {};
   for (const r of rows) {
     if (!OCCUPYING.includes(r.status as never) && r.status !== 'completed') continue;
-    const t = (acc[r.currency] ??= { committed: 0n, upfront: 0n, count: 0 });
+    const t = (acc[r.currency] ??= { committed: 0n, upfront: 0n, paid: 0n, count: 0 });
     t.committed += toUnits(r.total);
     t.upfront += toUnits(r.upfrontAmount);
+    t.paid += toUnits(r.paidAmount);
     t.count++;
   }
-  return Object.fromEntries(Object.entries(acc).map(([k, v]) => [k, { committedTotal: fromUnits(v.committed), upfrontTotal: fromUnits(v.upfront), bookings: v.count }]));
+  return Object.fromEntries(Object.entries(acc).map(([k, v]) => [k, {
+    committedTotal: fromUnits(v.committed), upfrontTotal: fromUnits(v.upfront), paidTotal: fromUnits(v.paid),
+    remainingTotal: fromUnits(v.committed - v.paid), bookings: v.count,
+  }]));
 }
 
 export async function bookingRoutes(app: App, deps: Deps) {
@@ -133,13 +140,14 @@ export async function bookingRoutes(app: App, deps: Deps) {
               e.budget_amount AS "budgetAmount", e.budget_currency AS "budgetCurrency", e.notes, e.status, e.created_at AS "createdAt"
          FROM events e JOIN countries co ON co.id = e.country_id WHERE e.id = $1 AND e.customer_id = $2`, [req.params.id, requireUser(req).id])).rows[0];
     if (!e) throw notFound();
-    const bookings = (await db.query(`${bookingSelect('customer')} WHERE b.event_id = $1 ORDER BY b.start_at`, [e.id])).rows as { id: string; number: string; status: string; serviceTitle: unknown; startAt: Date; total: string; upfrontAmount: string; currency: string }[];
+    const bookings = (await db.query(`${bookingSelect('customer')} WHERE b.event_id = $1 ORDER BY b.start_at`, [e.id])).rows as { id: string; number: string; status: string; serviceTitle: unknown; startAt: Date; total: string; upfrontAmount: string; paidAmount: string; remainingAmount: string; currency: string }[];
     const totals = totalsByCurrency(bookings);
     const inBudgetCurrency = e.budgetCurrency ? totals[e.budgetCurrency] : undefined;
     return {
       ...e,
       // The event status is independent from each booking's status (clause 25).
-      bookings: bookings.map((b) => ({ id: b.id, number: b.number, status: b.status, serviceTitle: b.serviceTitle, startAt: b.startAt, total: b.total, upfrontAmount: b.upfrontAmount, currency: b.currency })),
+      bookings: bookings.map((b) => ({ id: b.id, number: b.number, status: b.status, serviceTitle: b.serviceTitle, startAt: b.startAt, total: b.total,
+        upfrontAmount: b.upfrontAmount, paidAmount: b.paidAmount, remainingAmount: b.remainingAmount, currency: b.currency })),
       totals,
       budget: e.budgetAmount ? {
         amount: e.budgetAmount, currency: e.budgetCurrency,
@@ -184,7 +192,7 @@ export async function bookingRoutes(app: App, deps: Deps) {
   // ---------------- Quote, cart and checkout (clause 30) ----------------
   app.post('/quote', { schema: { tags: ['cart'], body: itemInput } }, async (req) => {
     const q = await quote(db, req.body);
-    const { providerId: _p, countryId: _c, maxBookingsPerSlot: _m, ...pub } = q;
+    const { providerId: _p, countryId: _c, maxBookingsPerSlot: _m, serviceTypeId: _t, ...pub } = q;
     return pub;
   });
 

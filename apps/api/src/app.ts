@@ -31,6 +31,7 @@ import { catalogProviderRoutes } from './modules/catalog/provider-routes.js';
 import { catalogPublicRoutes } from './modules/catalog/public-routes.js';
 import { availabilityRoutes } from './modules/availability/routes.js';
 import { bookingRoutes } from './modules/booking/routes.js';
+import { financeRoutes } from './modules/finance/routes.js';
 
 export async function buildApp(config: Config, db: Db) {
   const app = Fastify({
@@ -117,6 +118,7 @@ export async function buildApp(config: Config, db: Db) {
     await catalogPublicRoutes(v1, deps);
     await availabilityRoutes(v1, deps);
     await bookingRoutes(v1, deps);
+    await financeRoutes(v1, deps);
   }, { prefix: '/v1' });
 
   return app;

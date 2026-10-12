@@ -8,6 +8,8 @@ import { confirmHold, releaseBlock, reserve } from '../availability/engine.js';
 import { currentTerms } from '../auth/service.js';
 import { getSetting } from '../settings/registry.js';
 import { quote, type ItemInput, type Quote } from './pricing.js';
+import { computeCommission } from '../finance/commission.js';
+import { onBookingCompleted, onBookingNoShow } from '../finance/earnings.js';
 
 export type BookingStatus =
   | 'pending_provider_approval' | 'awaiting_payment' | 'confirmed' | 'in_progress' | 'completed' | 'no_show'
@@ -268,6 +270,8 @@ export async function checkout(db: Db, customerId: string, opts: { itemIds?: str
             q.requiresProviderApproval ? block.expiresAt : null, row.notes])).rows[0]!;
         await c.query(`INSERT INTO booking_status_events (booking_id, from_status, to_status, actor_id, actor_kind) VALUES ($1, NULL, $2, $3, 'customer')`,
           [b.id, status, customerId]);
+        // Commission rule and amount are fixed at booking time; later rule changes never touch it (clause 40).
+        await computeCommission(c, { bookingId: b.id, serviceId: q.serviceId, providerId: q.providerId, serviceTypeId: q.serviceTypeId, countryId, total: q.total, currency: q.currency }, new Date());
         await notify(c, await providerUserId(c, q.providerId), status === 'pending_provider_approval' ? 'booking.approval_requested' : 'booking.created',
           { bookingId: b.id, number: b.number, approvalDeadline: status === 'pending_provider_approval' ? block.expiresAt : null });
         created.push({ id: b.id, number: b.number, status, holdExpiresAt: block.expiresAt });
@@ -383,7 +387,11 @@ export async function providerExecution(db: Db, providerId: string, bookingId: s
     // A service cannot be marked done (which later unlocks the provider's earnings) before it has started.
     if (!rules.when) throw conflict('INVALID_STATUS_TRANSITION', { reason: 'the booking has not started yet' });
     await transition(c, b, rules.to, ctx, null);
-    if (rules.to === 'completed') await notify(c, b.customer_id, 'booking.completed', { bookingId: b.id, number: b.number });
+    if (rules.to === 'completed') {
+      await onBookingCompleted(c, b.id, ctx);
+      await notify(c, b.customer_id, 'booking.completed', { bookingId: b.id, number: b.number });
+    }
+    if (rules.to === 'no_show') await onBookingNoShow(c, b.id, ctx);
     return { status: b.status };
   });
 }

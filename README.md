@@ -2,7 +2,7 @@
 
 منصة متعددة الدول لحجز وشراء وإدارة خدمات الأعراس والحفلات وجميع المناسبات: تطبيق عملاء (Android/iOS)، موقع عملاء، لوحة إدارة مركزية، ولوحة ويب لأصحاب الخدمات — فوق واجهة خلفية واحدة.
 
-> **الحالة الحالية: المراحل 1 إلى 5 من 12.** راجع [`docs/00-roadmap.md`](docs/00-roadmap.md) لما نُفّذ وما لم يُنفّذ بعد. لا تُعد المنصة جاهزة للإنتاج.
+> **الحالة الحالية: المراحل 1 إلى 6 من 12.** راجع [`docs/00-roadmap.md`](docs/00-roadmap.md) لما نُفّذ وما لم يُنفّذ بعد. لا تُعد المنصة جاهزة للإنتاج.
 
 ## الوثائق
 
@@ -36,6 +36,7 @@ npm run worker                               # المهام المجدولة: إ
 3. إنشاء الموظفين وإسناد أدوارهم: `POST /v1/admin/staff`.
 4. إنشاء التصنيفات وإتاحتها للدولة، ثم أنواع الخدمات وحقولها: `POST /v1/admin/categories`, `POST /v1/admin/service-types`.
 5. بعد قبول صاحب خدمة، منحه الأنواع المسموح بها: `PUT /v1/admin/providers/:id/service-types`.
+6. المالية لكل دولة: إنشاء الصناديق (`POST /v1/admin/accounts`)، تكامل الدفع مع وضع سره في متغير بيئة (`POST /v1/admin/payment-integrations` ثم الاختبار والتفعيل)، طرق الدفع (`POST /v1/admin/payment-methods`)، وقواعد العمولة المعتمدة (`POST /v1/admin/commission-rules`).
 
 ## الاختبارات
 
@@ -64,6 +65,10 @@ npm run typecheck
 | المناسبات والسلة والحجوزات | `/events[/:id]`, `POST /quote`, `GET /cart`, `POST /cart/items`, `DELETE /cart/items/:id`, `POST /checkout` (رأس `Idempotency-Key` إلزامي), `GET /orders/:id`, `GET /bookings[/:id]`, `POST /bookings/:id/cancel` |
 | حجوزات صاحب الخدمة | `GET /provider/bookings[/:id]`, `POST /provider/bookings/:id/{accept,reject,start,complete,no-show}` |
 | الإدارة: الحجوزات | `GET /admin/bookings[/:id]`, `GET /admin/orders/:id`, `POST /admin/bookings/:id/cancel` |
+| المدفوعات (العميل) | `GET /orders/:id/payment-options`, `POST /orders/:id/payments` (رأس `Idempotency-Key`), `GET /orders/:id/payments`, `GET /payments/:id`, `POST /payments/:id/{proofs,cancel}` |
+| إشعارات مزودي الدفع | `POST /webhooks/payments/:integrationId` (توقيع إلزامي) |
+| المستحقات (صاحب الخدمة) | `GET /provider/earnings` |
+| الإدارة: المالية | `/admin/payment-integrations[/:id/test]`, `/admin/payment-methods`, `/admin/accounts[/:id/statement]`, `/admin/ledger/trial-balance`, `/admin/payments[/:id/review]`, `/admin/payment-events`, `/admin/commission-rules`, `/admin/earnings[/:id/approve-review]` |
 | الإدارة: الإعدادات والتدقيق | `GET /admin/settings`, `PUT /admin/settings/:key`, `GET /admin/settings/:key/history`, `GET /admin/audit-log` |
 
 صيغة الأخطاء موحدة ومترجمة حسب `Accept-Language`:

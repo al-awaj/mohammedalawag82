@@ -23,6 +23,7 @@ export type ItemInput = z.infer<typeof itemInput>;
 
 export interface Quote {
   serviceId: string;
+  serviceTypeId: string;
   providerId: string;
   countryId: string;
   packageId: string | null;
@@ -53,7 +54,7 @@ export interface Quote {
 }
 
 interface SvcRow {
-  id: string; provider_id: string; country_id: string; status: string; provider_status: string; title: unknown; terms: unknown;
+  id: string; service_type_id: string; provider_id: string; country_id: string; status: string; provider_status: string; title: unknown; terms: unknown;
   base_price: string; currency_code: string; pricing_unit: string; duration_minutes: number | null; capacity: number | null;
   requires_provider_approval: boolean; deposit_type: 'none' | 'fixed' | 'percent'; deposit_value: string; balance_due_days_before: number;
   booking_mode: 'time_slot' | 'full_day' | 'date_range' | 'quantity_rental'; capacity_mode: string; timezone: string;
@@ -66,7 +67,7 @@ interface SvcRow {
  */
 export async function quote(exec: Executor, input: ItemInput): Promise<Quote> {
   const s = (await exec.query<SvcRow>(
-    `SELECT s.id, s.provider_id, s.country_id, s.status, p.status AS provider_status, s.title, s.terms, s.base_price, s.currency_code,
+    `SELECT s.id, s.service_type_id, s.provider_id, s.country_id, s.status, p.status AS provider_status, s.title, s.terms, s.base_price, s.currency_code,
             s.pricing_unit, s.duration_minutes, s.capacity, s.requires_provider_approval, s.deposit_type, s.deposit_value,
             s.balance_due_days_before, t.booking_mode, t.capacity_mode, t.is_active AS type_active, co.timezone,
             CASE WHEN cp.id IS NULL THEN NULL ELSE jsonb_build_object('id', cp.id, 'name', cp.name, 'description', cp.description,
@@ -172,7 +173,7 @@ export async function quote(exec: Executor, input: ItemInput): Promise<Quote> {
   }
 
   return {
-    serviceId: s.id, providerId: s.provider_id, countryId: s.country_id, packageId: input.packageId, rentalItemId: input.rentalItemId,
+    serviceId: s.id, serviceTypeId: s.service_type_id, providerId: s.provider_id, countryId: s.country_id, packageId: input.packageId, rentalItemId: input.rentalItemId,
     start, end, calendarUnits: rental ? input.units : 1, units: input.units, guests: input.guests, currency, pricingUnit,
     unitPrice: fromUnits(unitPrice), quantityFactor: num % den === 0n ? String(num / den) : (Number(num) / Number(den)).toFixed(6),
     addOns: chosen.map((a) => ({ code: a.code, name: a.name, price: fromUnits(roundToMinor(toUnits(a.price), minor)) })),

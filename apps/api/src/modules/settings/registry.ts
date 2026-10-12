@@ -45,6 +45,24 @@ export const SETTINGS = {
     scopes: ['global', 'country'],
     description: { ar: 'اشتراط التحقق من هاتف العميل قبل إتمام الحجز', en: 'Require a verified customer phone before checkout' },
   }),
+  'payments.platform_enabled': def({
+    schema: z.boolean(),
+    default: true,
+    scopes: ['global', 'country'],
+    description: { ar: 'تفعيل الدفع عبر المنصة', en: 'Enable payment through the platform' },
+  }),
+  'payments.direct_enabled': def({
+    schema: z.boolean(),
+    default: false,
+    scopes: ['global', 'country'],
+    description: { ar: 'تفعيل الدفع المباشر لصاحب الخدمة', en: 'Enable direct payment to the provider' },
+  }),
+  'earnings.require_review': def({
+    schema: z.boolean(),
+    default: false,
+    scopes: ['global', 'country'],
+    description: { ar: 'مراجعة الإدارة قبل اعتبار مستحقات الخدمة المكتملة مستحقة', en: 'Staff review before a completed service earning becomes due' },
+  }),
   'auth.require_phone_verification': def({
     schema: z.boolean(),
     default: true,
