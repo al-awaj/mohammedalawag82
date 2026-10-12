@@ -61,6 +61,8 @@ export async function serviceDetail(exec: Executor, id: string, opts: { audience
        FROM service_media WHERE service_id = $1 ORDER BY sort_order, created_at`, [id])).rows
     .map((m) => ({ ...m, url: `/v1/media/${m.id}` }));
 
+  const rating = (await exec.query<{ count: number; average: string | null }>(
+    `SELECT count(*)::int AS count, round(avg(rating), 2)::text AS average FROM reviews WHERE service_id = $1 AND status = 'published'`, [id])).rows[0]!;
   const showIdentity = opts.audience !== 'public' || (await identityVisible(exec, s.countryId, s.providerShowIdentity));
   const {
     providerName, providerShowIdentity: _f, policyId, policyName, policyDescription, policyTiers, policyDepositRefundable,
@@ -80,5 +82,6 @@ export async function serviceDetail(exec: Executor, id: string, opts: { audience
     packages,
     rentalItems,
     media,
+    rating: { average: rating.average, count: rating.count },
   };
 }

@@ -19,5 +19,11 @@ export async function enqueueMessage(exec: Executor, msg: OutboundMessage): Prom
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
     [msg.channel, msg.recipientUserId, msg.target, msg.templateKey, msg.language, JSON.stringify(msg.payload)],
   );
+  // Every account notice also lands in the in-app inbox; one-time codes never do.
+  if (msg.channel !== 'web' && msg.recipientUserId && !msg.templateKey.startsWith('auth.')) {
+    await exec.query(
+      `INSERT INTO message_outbox (channel, recipient_user_id, target, template_key, language, payload) VALUES ('web', $1, $2, $3, $4, $5)`,
+      [msg.recipientUserId, `user:${msg.recipientUserId}`, msg.templateKey, msg.language, JSON.stringify(msg.payload)]);
+  }
   return rows[0]!.id;
 }

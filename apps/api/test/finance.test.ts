@@ -137,7 +137,7 @@ describe('payment through the platform (tests 14, 19-20)', () => {
     expect(commission.commission_amount).toBe('2000.0000');
     const earning = (await ctx.db.query('SELECT status, collected_by_platform, net_amount FROM provider_earnings WHERE booking_id = $1', [b.id])).rows[0];
     expect(earning).toEqual({ status: 'not_due', collected_by_platform: '5000.0000', net_amount: '3000.0000' });
-    expect((await ctx.db.query(`SELECT 1 FROM message_outbox WHERE recipient_user_id = $1 AND template_key = 'payment.succeeded'`, [c.userId])).rowCount).toBe(1);
+    expect((await ctx.db.query(`SELECT 1 FROM message_outbox WHERE channel <> 'web' AND recipient_user_id = $1 AND template_key = 'payment.succeeded'`, [c.userId])).rowCount).toBe(1);
   });
 
   it('takes the remaining balance after confirmation', async () => {

@@ -103,7 +103,7 @@ export async function register(ctx: Ctx, countryCode: string, accountType: 'cust
 /** Reads the latest OTP queued for a user (what the SMS/email driver would deliver). */
 export async function latestCode(ctx: Ctx, userId: string, templateKey: string): Promise<string> {
   const r = await ctx.db.query<{ payload: { code: string } }>(
-    `SELECT payload FROM message_outbox WHERE recipient_user_id = $1 AND template_key = $2 ORDER BY created_at DESC LIMIT 1`, [userId, templateKey]);
+    `SELECT payload FROM message_outbox WHERE channel <> 'web' AND recipient_user_id = $1 AND template_key = $2 ORDER BY created_at DESC LIMIT 1`, [userId, templateKey]);
   return r.rows[0]!.payload.code;
 }
 

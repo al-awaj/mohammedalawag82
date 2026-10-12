@@ -120,7 +120,7 @@ describe('provider approval and rejection (test 3)', () => {
     expect(detail.body.payoutDetails).toBeNull();
 
     // Applicant is notified of each decision.
-    const msgs = await ctx.db.query(`SELECT template_key FROM message_outbox WHERE recipient_user_id = $1 AND template_key LIKE 'provider_application.%' ORDER BY created_at`, [p.userId]);
+    const msgs = await ctx.db.query(`SELECT template_key FROM message_outbox WHERE channel <> 'web' AND recipient_user_id = $1 AND template_key LIKE 'provider_application.%' ORDER BY created_at`, [p.userId]);
     expect(msgs.rows.map((r) => r.template_key)).toEqual(['provider_application.needs_info', 'provider_application.approved']);
 
     // Audit records the decision maker and reason.

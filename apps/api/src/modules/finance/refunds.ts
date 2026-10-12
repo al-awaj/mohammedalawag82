@@ -8,7 +8,7 @@ import { closeBookingFinancials } from './earnings.js';
 import { adapterFor, type IntegrationRow } from './gateways.js';
 import { post, systemAccount } from './ledger.js';
 
-export type RefundSource = 'cancellation_policy' | 'provider_cancellation' | 'admin_cancellation' | 'no_show_policy' | 'slot_unavailable' | 'booking_cancelled' | 'manual';
+export type RefundSource = 'cancellation_policy' | 'provider_cancellation' | 'admin_cancellation' | 'no_show_policy' | 'slot_unavailable' | 'booking_cancelled' | 'manual' | 'dispute';
 
 interface Refundable { paymentId: string; method: string; verified: bigint; refunded: bigint; available: bigint; succeededAt: Date }
 
@@ -73,8 +73,11 @@ export async function requestRefunds(c: Executor, bookingId: string, amount: str
 
 interface RefundRow {
   id: string; number: string; booking_id: string; payment_id: string; amount: string; currency_code: string; status: string; method: string;
-  requested_by: string | null; requested_by_kind: string;
+  requested_by: string | null; requested_by_kind: string; charge_to: 'customer_advances' | 'provider' | 'platform';
 }
+
+/** Where an approved refund is taken from: customer advances before revenue is recognised, else the provider's payable or the platform's commission. */
+const SOURCE_ACCOUNT = { customer_advances: 'customer_advances', provider: 'provider_payable_due', platform: 'commission_revenue' } as const;
 
 async function lockRefund(c: Executor, id: string) {
   const r = (await c.query<RefundRow & { country_id: string; provider_id: string; customer_id: string }>(
@@ -98,10 +101,11 @@ export async function approveRefund(c: Executor, id: string, ctx: ActorContext) 
     countryId: r.country_id, description: `Refund approved ${r.number}`, sourceType: 'refund_approval', sourceId: r.id,
     idempotencyKey: `refund_approval:${r.id}`, createdBy: ctx.actorId,
     lines: [
-      { accountId: await systemAccount(c, r.country_id, cur, 'customer_advances'), debit: r.amount, currency: cur, bookingId: r.booking_id, providerId: r.provider_id, paymentId: r.payment_id },
+      { accountId: await systemAccount(c, r.country_id, cur, SOURCE_ACCOUNT[r.charge_to]), debit: r.amount, currency: cur, bookingId: r.booking_id, providerId: r.provider_id, paymentId: r.payment_id },
       { accountId: await systemAccount(c, r.country_id, cur, 'refunds_payable'), credit: r.amount, currency: cur, bookingId: r.booking_id, providerId: r.provider_id, paymentId: r.payment_id },
     ],
   });
+  await adjustEarning(c, r, 1n, ctx);
   await c.query(`UPDATE refunds SET status = 'approved', approved_by = $2, approved_at = now(), reviewed_by = coalesce(reviewed_by, $2) WHERE id = $1`, [id, ctx.actorId]);
   await recordStatus(c, id, r.status, 'approved', ctx, null);
   await audit(c, ctx, { action: 'refund.approved', entityType: 'refund', entityId: id, after: { amount: r.amount } });
@@ -177,14 +181,35 @@ export async function failRefund(c: Executor, id: string, reason: string, ctx: A
     idempotencyKey: `refund_failure:${r.id}`, createdBy: ctx.actorId,
     lines: [
       { accountId: await systemAccount(c, r.country_id, cur, 'refunds_payable'), debit: r.amount, currency: cur, bookingId: r.booking_id, providerId: r.provider_id, paymentId: r.payment_id },
-      { accountId: await systemAccount(c, r.country_id, cur, 'customer_advances'), credit: r.amount, currency: cur, bookingId: r.booking_id, providerId: r.provider_id, paymentId: r.payment_id },
+      { accountId: await systemAccount(c, r.country_id, cur, SOURCE_ACCOUNT[r.charge_to]), credit: r.amount, currency: cur, bookingId: r.booking_id, providerId: r.provider_id, paymentId: r.payment_id },
     ],
   });
+  await adjustEarning(c, r, -1n, ctx);
   await c.query(`UPDATE refunds SET status = 'failed', failure_reason = $2 WHERE id = $1`, [id, reason]);
   await recordStatus(c, id, r.status, 'failed', ctx, reason);
   await audit(c, ctx, { action: 'refund.failed', entityType: 'refund', entityId: id, reason });
   // A failed refund is retried as a new request, so the booking stays open for that.
   return { changed: true };
+}
+
+/**
+ * A refund charged to the provider lowers their net (a settled earning is reopened so the amount is
+ * offset in the next settlement); charged to the platform it lowers the commission. sign = -1 undoes it.
+ */
+async function adjustEarning(c: Executor, r: RefundRow, sign: bigint, ctx: ActorContext) {
+  if (r.charge_to === 'customer_advances') return;
+  const e = (await c.query<{ id: string; status: string; net_amount: string; commission_amount: string }>('SELECT * FROM provider_earnings WHERE booking_id = $1 FOR UPDATE', [r.booking_id])).rows[0];
+  if (!e) return;
+  const delta = toUnits(r.amount) * sign;
+  if (r.charge_to === 'provider') {
+    await c.query('UPDATE provider_earnings SET net_amount = $2 WHERE id = $1', [e.id, fromUnits(toUnits(e.net_amount) - delta)]);
+    if (sign > 0n && e.status === 'settled') {
+      await c.query(`UPDATE provider_earnings SET status = 're_reviewed', status_reason = $2 WHERE id = $1`, [e.id, `refund ${r.number} charged to provider`]);
+      await c.query(`INSERT INTO provider_earning_events (earning_id, from_status, to_status, actor_id, reason) VALUES ($1, 'settled', 're_reviewed', $2, $3)`, [e.id, ctx.actorId, r.number]);
+    }
+  } else {
+    await c.query('UPDATE provider_earnings SET commission_amount = $2 WHERE id = $1', [e.id, fromUnits(toUnits(e.commission_amount) - delta)]);
+  }
 }
 
 export function assertRefundAmount(amount: string) {

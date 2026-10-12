@@ -69,6 +69,18 @@ export const SETTINGS = {
     scopes: ['global', 'country'],
     description: { ar: 'مراجعة الإدارة قبل اعتبار مستحقات الخدمة المكتملة مستحقة', en: 'Staff review before a completed service earning becomes due' },
   }),
+  'reviews.require_moderation': def({
+    schema: z.boolean(),
+    default: false,
+    scopes: ['global', 'country'],
+    description: { ar: 'مراجعة التقييمات قبل نشرها', en: 'Moderate reviews before publishing' },
+  }),
+  'reviews.window_days': def({
+    schema: z.number().int().min(1).max(365),
+    default: 90,
+    scopes: ['global'],
+    description: { ar: 'المدة المسموح فيها بالتقييم بعد انتهاء الحجز (بالأيام)', en: 'Days after a booking ends during which it can be reviewed' },
+  }),
   'auth.require_phone_verification': def({
     schema: z.boolean(),
     default: true,

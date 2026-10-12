@@ -9,6 +9,7 @@ import { currentTerms } from '../auth/service.js';
 import { getSetting } from '../settings/registry.js';
 import { quote, type ItemInput, type Quote } from './pricing.js';
 import { computeCommission } from '../finance/commission.js';
+import { evaluateCoupon } from '../promotions/service.js';
 import { onBookingCompleted } from '../finance/earnings.js';
 
 export type BookingStatus =
@@ -67,6 +68,12 @@ export async function transition(c: Executor, b: BookingRow, to: BookingStatus, 
   await c.query('INSERT INTO booking_status_events (booking_id, from_status, to_status, actor_id, actor_kind, reason) VALUES ($1, $2, $3, $4, $5, $6)',
     [b.id, b.status, to, ctx.actorId, ctx.actorKind, reason]);
   await audit(c, ctx, { action: `booking.${to}`, entityType: 'booking', entityId: b.id, before: { status: b.status }, after: { status: to }, reason });
+  // A coupon use on a booking that ends before any money changed hands does not count against its limits.
+  if (['expired', 'rejected', 'cancelled_by_customer', 'cancelled_by_provider', 'cancelled_by_admin'].includes(to)) {
+    await c.query(
+      `UPDATE promotion_redemptions SET status = 'void' WHERE booking_id = $1 AND NOT EXISTS (
+         SELECT 1 FROM payment_allocations a JOIN payments p ON p.id = a.payment_id WHERE a.booking_id = $1 AND p.status = 'succeeded')`, [b.id]);
+  }
   await refreshOrderStatus(c, b.order_id);
   b.status = to;
 }
@@ -179,7 +186,7 @@ async function assertOwnEvent(c: Executor, customerId: string, eventId: string) 
 // Checkout: one order, one booking per service (clause 31), all-or-nothing.
 // ---------------------------------------------------------------------------
 
-export async function checkout(db: Db, customerId: string, opts: { itemIds?: string[] | undefined; acceptTerms: boolean; idempotencyKey: string }, ctx: ActorContext) {
+export async function checkout(db: Db, customerId: string, opts: { itemIds?: string[] | undefined; acceptTerms: boolean; idempotencyKey: string; couponCode?: string | undefined }, ctx: ActorContext) {
   if (!opts.acceptTerms) throw badRequest('TERMS_NOT_ACCEPTED');
 
   const existing = (await db.query<{ id: string }>('SELECT id FROM orders WHERE customer_id = $1 AND idempotency_key = $2', [customerId, opts.idempotencyKey])).rows[0];
@@ -227,13 +234,28 @@ export async function checkout(db: Db, customerId: string, opts: { itemIds?: str
 
       const terms = await currentTerms(c, 'customer_terms', countryId);
       if (!terms) throw badRequest('TERMS_NOT_PUBLISHED');
+
+      // Coupon (clause 55): validated under a lock on the promotion, then each item is re-priced with its share.
+      let promotionId: string | null = null;
+      if (opts.couponCode) {
+        const ev = await evaluateCoupon(c, opts.couponCode, quotes.map(({ row, q }) => ({
+          key: row.id, serviceId: q.serviceId, serviceTypeId: q.serviceTypeId, providerId: q.providerId, countryId: q.countryId, currency: q.currency, total: q.total, customerId,
+        })), true);
+        promotionId = ev.promotionId;
+        for (const item of quotes) {
+          const d = ev.byItem.get(item.row.id);
+          if (d) item.q = await quote(c, await cartRowToInput(c, item.row), d);
+        }
+      }
+      const discountTotal = fromUnits(quotes.reduce((a, { q }) => a + toUnits(q.discountAmount), 0n));
+      const subtotalSum = fromUnits(quotes.reduce((a, { q }) => a + toUnits(q.subtotal), 0n));
       const total = fromUnits(quotes.reduce((a, { q }) => a + toUnits(q.total), 0n));
       const upfront = fromUnits(quotes.reduce((a, { q }) => a + toUnits(q.upfrontAmount), 0n));
 
       const order = (await c.query<{ id: string; number: string }>(
-        `INSERT INTO orders (customer_id, event_id, country_id, currency_code, subtotal, total, upfront_total, idempotency_key, terms_version_id)
-         VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8) RETURNING id, number`,
-        [customerId, eventIds.length === 1 ? eventIds[0] : null, countryId, currency, total, upfront, opts.idempotencyKey, terms.id])).rows[0]!;
+        `INSERT INTO orders (customer_id, event_id, country_id, currency_code, subtotal, total, upfront_total, idempotency_key, terms_version_id, discount_total, promotion_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, number`,
+        [customerId, eventIds.length === 1 ? eventIds[0] : null, countryId, currency, subtotalSum, total, upfront, opts.idempotencyKey, terms.id, discountTotal, promotionId])).rows[0]!;
       await c.query(`INSERT INTO terms_acceptances (user_id, terms_version_id, context, ip) VALUES ($1, $2, 'booking', $3)`, [customerId, terms.id, ctx.ip]);
 
       const approvalHours = await getSetting(c, 'booking.approval_window_hours', countryId);
@@ -259,19 +281,27 @@ export async function checkout(db: Db, customerId: string, opts: { itemIds?: str
           `INSERT INTO bookings (id, order_id, customer_id, provider_id, service_id, package_id, rental_item_id, event_id, country_id, start_at, end_at,
              units, guests, calendar_block_id, service_title, package_name, pricing_unit, unit_price, quantity_factor, add_ons, subtotal, total,
              currency_code, deposit_type, deposit_value, upfront_amount, balance_due_at, security_deposit_amount, cancellation_policy, terms_snapshot,
-             requires_provider_approval, status, hold_expires_at, approval_deadline, customer_notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
+             requires_provider_approval, status, hold_expires_at, approval_deadline, customer_notes,
+             promotion_id, discount_amount, discount_platform_borne, discount_provider_borne)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39)
            RETURNING id, number`,
           [bookingId, order.id, customerId, q.providerId, q.serviceId, q.packageId, q.rentalItemId, row.event_id, countryId, q.start, q.end,
             q.units, q.guests, block.id, JSON.stringify(q.serviceTitle), q.packageName ? JSON.stringify(q.packageName) : null, q.pricingUnit,
             q.unitPrice, q.quantityFactor, JSON.stringify(q.addOns), q.subtotal, q.total, q.currency, q.depositType, q.depositValue, q.upfrontAmount,
             q.balanceDueAt, q.securityDepositAmount, q.cancellationPolicy ? JSON.stringify(q.cancellationPolicy) : null,
             JSON.stringify(q.termsSnapshot), q.requiresProviderApproval, status, block.expiresAt,
-            q.requiresProviderApproval ? block.expiresAt : null, row.notes])).rows[0]!;
+            q.requiresProviderApproval ? block.expiresAt : null, row.notes,
+            toUnits(q.discountAmount) > 0n ? promotionId : null, q.discountAmount, q.discountPlatformBorne, q.discountProviderBorne])).rows[0]!;
+        if (toUnits(q.discountAmount) > 0n) {
+          await c.query('INSERT INTO promotion_redemptions (promotion_id, order_id, booking_id, customer_id, discount_amount) VALUES ($1, $2, $3, $4, $5)',
+            [promotionId, order.id, b.id, customerId, q.discountAmount]);
+        }
         await c.query(`INSERT INTO booking_status_events (booking_id, from_status, to_status, actor_id, actor_kind) VALUES ($1, NULL, $2, $3, 'customer')`,
           [b.id, status, customerId]);
         // Commission rule and amount are fixed at booking time; later rule changes never touch it (clause 40).
-        await computeCommission(c, { bookingId: b.id, serviceId: q.serviceId, providerId: q.providerId, serviceTypeId: q.serviceTypeId, countryId, total: q.total, currency: q.currency }, new Date());
+        // Base = price minus what the provider gives up; a platform-borne discount does not cut the provider's commission base.
+        const commissionBase = fromUnits(toUnits(q.total) + toUnits(q.discountPlatformBorne));
+        await computeCommission(c, { bookingId: b.id, serviceId: q.serviceId, providerId: q.providerId, serviceTypeId: q.serviceTypeId, countryId, total: commissionBase, currency: q.currency }, new Date());
         await notify(c, await providerUserId(c, q.providerId), status === 'pending_provider_approval' ? 'booking.approval_requested' : 'booking.created',
           { bookingId: b.id, number: b.number, approvalDeadline: status === 'pending_provider_approval' ? block.expiresAt : null });
         created.push({ id: b.id, number: b.number, status, holdExpiresAt: block.expiresAt });
@@ -436,4 +466,30 @@ export async function warnExpiringHolds(db: Db): Promise<number> {
 
 export function assertCustomer(kind: string) {
   if (kind !== 'customer') throw forbidden();
+}
+
+/** Shows what a coupon would do to the cart (or selected items) without using it. */
+export async function previewCoupon(db: Db, customerId: string, code: string, itemIds?: string[]) {
+  const c = await db.connect();
+  try {
+    await c.query('BEGIN');
+    const rows = (await c.query<CartRow>(`SELECT * FROM cart_items WHERE customer_id = $1 AND ($2::uuid[] IS NULL OR id = ANY($2)) ORDER BY created_at`, [customerId, itemIds ?? null])).rows;
+    if (!rows.length) throw badRequest('CART_EMPTY');
+    const quotes = [];
+    for (const row of rows) quotes.push({ row, q: await quote(c, await cartRowToInput(c, row)) });
+    const ev = await evaluateCoupon(c, code, quotes.map(({ row, q }) => ({
+      key: row.id, serviceId: q.serviceId, serviceTypeId: q.serviceTypeId, providerId: q.providerId, countryId: q.countryId, currency: q.currency, total: q.total, customerId,
+    })), false);
+    return {
+      totalDiscount: fromUnits(ev.total),
+      items: quotes.map(({ row, q }) => {
+        const d = ev.byItem.get(row.id);
+        const disc = d?.amount ?? 0n;
+        return { itemId: row.id, total: q.total, discount: fromUnits(disc), totalAfterDiscount: fromUnits(toUnits(q.total) - disc), currency: q.currency };
+      }),
+    };
+  } finally {
+    await c.query('ROLLBACK');
+    c.release();
+  }
 }

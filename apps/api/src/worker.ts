@@ -2,6 +2,8 @@ import { loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { releaseExpiredHolds } from './modules/availability/engine.js';
 import { expireBookings, warnExpiringHolds } from './modules/booking/service.js';
+import { deliverOutbox } from './modules/notifications/delivery.js';
+import { sendReminders } from './modules/notifications/reminders.js';
 
 /**
  * Scheduled jobs (clause 73). Run as its own process: `npm run worker`.
@@ -15,6 +17,8 @@ const jobs: { name: string; everyMs: number; run: () => Promise<number> }[] = [
   { name: 'expire-bookings', everyMs: 30_000, run: () => expireBookings(db) },
   { name: 'release-expired-holds', everyMs: 30_000, run: () => releaseExpiredHolds(db) },
   { name: 'warn-expiring-holds', everyMs: 60_000, run: () => warnExpiringHolds(db) },
+  { name: 'send-reminders', everyMs: 15 * 60_000, run: () => sendReminders(db) },
+  { name: 'deliver-notifications', everyMs: 5_000, run: () => deliverOutbox(db) },
 ];
 
 async function tick(job: (typeof jobs)[number]) {

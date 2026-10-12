@@ -138,7 +138,7 @@ describe('cart and checkout (tests 12-13)', () => {
     expect((await api(ctx, 'GET', '/v1/cart', { token: c.token })).body.items).toEqual([]);
     const accepted = await ctx.db.query(`SELECT 1 FROM terms_acceptances WHERE user_id = $1 AND context = 'booking'`, [c.userId]);
     expect(accepted.rowCount).toBe(1);
-    const providerMsgs = await ctx.db.query(`SELECT template_key FROM message_outbox WHERE recipient_user_id = ANY($1) AND template_key LIKE 'booking.%'`, [[hall.p.userId, photo.p.userId]]);
+    const providerMsgs = await ctx.db.query(`SELECT template_key FROM message_outbox WHERE channel <> 'web' AND recipient_user_id = ANY($1) AND template_key LIKE 'booking.%'`, [[hall.p.userId, photo.p.userId]]);
     expect(providerMsgs.rows.map((r) => r.template_key)).toEqual(['booking.created', 'booking.created']);
   });
 
@@ -207,7 +207,7 @@ describe('provider approval per service (tests 7-8, decision D5)', () => {
     const hours = (Date.parse(b.approvalDeadline) - Date.now()) / 3_600_000;
     expect(hours).toBeGreaterThan(23.9);
     expect(hours).toBeLessThanOrEqual(24);
-    const req = await ctx.db.query(`SELECT 1 FROM message_outbox WHERE recipient_user_id = $1 AND template_key = 'booking.approval_requested'`, [p.userId]);
+    const req = await ctx.db.query(`SELECT 1 FROM message_outbox WHERE channel <> 'web' AND recipient_user_id = $1 AND template_key = 'booking.approval_requested'`, [p.userId]);
     expect(req.rowCount).toBe(1);
 
     // Cannot be confirmed by payment before the provider accepts.
@@ -228,7 +228,7 @@ describe('provider approval per service (tests 7-8, decision D5)', () => {
     const b = (await book(c.token, { serviceId, date })).bookings[0];
     expect((await api(ctx, 'POST', `/v1/provider/bookings/${b.id}/reject`, { token: p.token, body: {} })).status).toBe(400);
     expect((await api(ctx, 'POST', `/v1/provider/bookings/${b.id}/reject`, { token: p.token, body: { reason: 'Private event that day' } })).body.status).toBe('rejected');
-    const note = await ctx.db.query(`SELECT payload->>'reason' AS r FROM message_outbox WHERE recipient_user_id = $1 AND template_key = 'booking.rejected'`, [c.userId]);
+    const note = await ctx.db.query(`SELECT payload->>'reason' AS r FROM message_outbox WHERE channel <> 'web' AND recipient_user_id = $1 AND template_key = 'booking.rejected'`, [c.userId]);
     expect(note.rows[0].r).toBe('Private event that day');
     expect((await book((await customer()).token, { serviceId, date })).bookings[0].status).toBe('pending_provider_approval');
   });
@@ -266,7 +266,7 @@ describe('temporary hold expiry and late payment (tests 9, 17-18)', () => {
     await ctx.db.query(`UPDATE bookings SET hold_expires_at = now() + interval '2 minutes' WHERE id = $1`, [b.id]);
     await warnExpiringHolds(ctx.db);
     await warnExpiringHolds(ctx.db);
-    expect((await ctx.db.query(`SELECT count(*)::int AS n FROM message_outbox WHERE recipient_user_id = $1 AND template_key = 'booking.hold_expiring'`, [c.userId])).rows[0].n).toBe(1);
+    expect((await ctx.db.query(`SELECT count(*)::int AS n FROM message_outbox WHERE channel <> 'web' AND recipient_user_id = $1 AND template_key = 'booking.hold_expiring'`, [c.userId])).rows[0].n).toBe(1);
 
     await ctx.db.query(`UPDATE bookings SET hold_expires_at = now() - interval '1 second' WHERE id = $1`, [b.id]);
     await ctx.db.query(`UPDATE calendar_blocks SET expires_at = now() - interval '1 second' WHERE booking_ref = $1`, [b.id]);
@@ -342,7 +342,7 @@ describe('events and budget (clauses 24-25)', () => {
     expect(e.status).toBe('planning');
     expect(e.bookings).toHaveLength(2);
     expect(e.budget).toMatchObject({ amount: '18000.0000', committed: '19000.0000', remaining: '-1000.0000', overBudget: true, otherCurrencies: [] });
-    expect((await ctx.db.query(`SELECT 1 FROM message_outbox WHERE recipient_user_id = $1 AND template_key = 'event.budget_exceeded'`, [c.userId])).rowCount).toBe(1);
+    expect((await ctx.db.query(`SELECT 1 FROM message_outbox WHERE channel <> 'web' AND recipient_user_id = $1 AND template_key = 'event.budget_exceeded'`, [c.userId])).rowCount).toBe(1);
 
     const other = await customer();
     expect((await api(ctx, 'GET', `/v1/events/${ev.body.id}`, { token: other.token })).status).toBe(404);

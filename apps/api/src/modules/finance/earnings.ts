@@ -12,10 +12,15 @@ async function setStatus(c: Executor, id: string, from: string, to: EarningStatu
   await c.query('INSERT INTO provider_earning_events (earning_id, from_status, to_status, actor_id, reason) VALUES ($1, $2, $3, $4, $5)', [id, from, to, actorId, reason]);
 }
 
-/** Amounts collected for a booking from succeeded payments, split by model. */
+/**
+ * Amounts collected for a booking from succeeded payments, split by model. The platform amount is net
+ * of refunds already approved out of customer advances, so later postings never count them twice.
+ */
 export async function collected(c: Executor, bookingId: string) {
   const r = (await c.query<{ platform: string; direct: string }>(
-    `SELECT coalesce(sum(a.verified_amount) FILTER (WHERE p.model = 'platform'), 0)::numeric(20,4)::text AS platform,
+    `SELECT (coalesce(sum(a.verified_amount) FILTER (WHERE p.model = 'platform'), 0)
+             - coalesce((SELECT sum(r.amount) FROM refunds r WHERE r.booking_id = $1 AND r.charge_to = 'customer_advances'
+                           AND r.status IN ('approved', 'processing', 'completed')), 0))::numeric(20,4)::text AS platform,
             coalesce(sum(a.verified_amount) FILTER (WHERE p.model = 'direct'), 0)::numeric(20,4)::text AS direct
        FROM payment_allocations a JOIN payments p ON p.id = a.payment_id
       WHERE a.booking_id = $1 AND p.status = 'succeeded'`, [bookingId])).rows[0]!;
@@ -31,19 +36,20 @@ export async function interimPaid(c: Executor, bookingId: string): Promise<strin
 
 /** Creates (once) and refreshes the earning record of a confirmed booking. */
 export async function syncEarning(c: Executor, bookingId: string) {
-  const b = (await c.query<{ provider_id: string; country_id: string; currency_code: string; total: string }>(
-    'SELECT provider_id, country_id, currency_code, total FROM bookings WHERE id = $1', [bookingId])).rows[0]!;
+  const b = (await c.query<{ provider_id: string; country_id: string; currency_code: string; total: string; discount_platform_borne: string }>(
+    'SELECT provider_id, country_id, currency_code, total, discount_platform_borne FROM bookings WHERE id = $1', [bookingId])).rows[0]!;
   const commission = (await c.query<{ commission_amount: string }>('SELECT commission_amount FROM booking_commissions WHERE booking_id = $1', [bookingId])).rows[0]?.commission_amount ?? '0';
   const col = await collected(c, bookingId);
-  const net = fromUnits(toUnits(col.platform) - toUnits(commission));
+  // A discount borne by the platform is paid to the provider by the platform (clause 55: never taken from the provider).
+  const net = fromUnits(toUnits(col.platform) + toUnits(b.discount_platform_borne) - toUnits(commission));
   const created = await c.query(
-    `INSERT INTO provider_earnings (booking_id, provider_id, country_id, currency_code, booking_total, collected_by_platform, collected_directly, commission_amount, net_amount)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO provider_earnings (booking_id, provider_id, country_id, currency_code, booking_total, collected_by_platform, collected_directly, commission_amount, net_amount, platform_discount)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      ON CONFLICT (booking_id) DO UPDATE SET collected_by_platform = EXCLUDED.collected_by_platform, collected_directly = EXCLUDED.collected_directly,
-       net_amount = EXCLUDED.net_amount
+       net_amount = EXCLUDED.net_amount, platform_discount = EXCLUDED.platform_discount
      WHERE provider_earnings.status = 'not_due'
      RETURNING (xmax = 0) AS inserted, id`,
-    [bookingId, b.provider_id, b.country_id, b.currency_code.trim(), b.total, col.platform, col.direct, commission, net]);
+    [bookingId, b.provider_id, b.country_id, b.currency_code.trim(), b.total, col.platform, col.direct, commission, net, b.discount_platform_borne]);
   const row = created.rows[0] as { inserted: boolean; id: string } | undefined;
   if (row?.inserted) await c.query(`INSERT INTO provider_earning_events (earning_id, from_status, to_status) VALUES ($1, NULL, 'not_due')`, [row.id]);
 }
@@ -54,7 +60,7 @@ export async function syncEarning(c: Executor, bookingId: string) {
  */
 export async function onBookingCompleted(c: Executor, bookingId: string, ctx: ActorContext) {
   await syncEarning(c, bookingId);
-  const e = (await c.query<{ id: string; status: string; provider_id: string; country_id: string; currency_code: string; collected_by_platform: string; commission_amount: string; net_amount: string }>(
+  const e = (await c.query<{ id: string; status: string; provider_id: string; country_id: string; currency_code: string; collected_by_platform: string; commission_amount: string; net_amount: string; platform_discount: string }>(
     'SELECT * FROM provider_earnings WHERE booking_id = $1 FOR UPDATE', [bookingId])).rows[0]!;
   if (e.status !== 'not_due') return;
   const review = await getSetting(c, 'earnings.require_review', e.country_id);
@@ -67,6 +73,7 @@ export async function onBookingCompleted(c: Executor, bookingId: string, ctx: Ac
     idempotencyKey: `booking_completion:${bookingId}`, createdBy: ctx.actorId,
     lines: [
       { accountId: await systemAccount(c, e.country_id, cur, 'customer_advances'), debit: fromUnits(toUnits(e.collected_by_platform) - early), currency: cur, bookingId, providerId: e.provider_id },
+      { accountId: await systemAccount(c, e.country_id, cur, 'platform_discount_cost'), debit: e.platform_discount, currency: cur, bookingId, providerId: e.provider_id },
       { accountId: await systemAccount(c, e.country_id, cur, 'commission_revenue'), credit: e.commission_amount, currency: cur, bookingId, providerId: e.provider_id },
       // Net may be negative when the provider was paid directly: then the provider owes the commission.
       { accountId: payable, credit: fromUnits(toUnits(e.net_amount) - early), currency: cur, bookingId, providerId: e.provider_id },
@@ -95,8 +102,8 @@ export async function closeBookingFinancials(c: Executor, bookingId: string, ctx
   if (already.rowCount) return;
 
   const col = await collected(c, bookingId);
-  const refunded = toUnits((await c.query<{ v: string }>(`SELECT coalesce(sum(amount), 0)::text AS v FROM refunds WHERE booking_id = $1 AND status = 'completed'`, [bookingId])).rows[0]!.v);
-  const retained = toUnits(col.platform) - refunded;
+  // Already net of refunds (none are open at this point).
+  const retained = toUnits(col.platform);
   const early = toUnits(await interimPaid(c, bookingId));
   if (retained === 0n && early === 0n && toUnits(col.direct) === 0n) {
     // Nothing was kept or paid out: no earning to create.
@@ -124,7 +131,8 @@ export async function closeBookingFinancials(c: Executor, bookingId: string, ctx
     ],
   });
   const remaining = net - early;
-  await c.query('UPDATE provider_earnings SET commission_amount = $2, net_amount = $3 WHERE id = $1', [earning.id, fromUnits(commission), fromUnits(net)]);
+  // A platform-borne discount is only paid for a delivered service.
+  await c.query('UPDATE provider_earnings SET commission_amount = $2, net_amount = $3, platform_discount = 0 WHERE id = $1', [earning.id, fromUnits(commission), fromUnits(net)]);
   await setStatus(c, earning.id, earning.status, remaining === 0n ? 'settled' : 'due', ctx.actorId,
     remaining === 0n ? 'closed: nothing left to settle' : `closed after ${b.status}`, remaining === 0n ? '' : ', due_at = now()');
   await audit(c, ctx, { action: 'booking.financials_closed', entityType: 'booking', entityId: bookingId, after: { retained: fromUnits(retained), commission: fromUnits(commission), net: fromUnits(net), interimPaid: fromUnits(early) } });

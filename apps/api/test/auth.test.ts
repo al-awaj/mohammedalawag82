@@ -20,7 +20,7 @@ describe('customer registration (test 1)', () => {
       `SELECT t.kind FROM terms_acceptances a JOIN terms_versions t ON t.id = a.terms_version_id WHERE a.user_id = $1 ORDER BY t.kind`, [u.userId]);
     expect(terms.rows.map((r) => r.kind)).toEqual(['customer_terms', 'privacy_policy']);
 
-    const outbox = await ctx.db.query(`SELECT channel, target, status FROM message_outbox WHERE recipient_user_id = $1`, [u.userId]);
+    const outbox = await ctx.db.query(`SELECT channel, target, status FROM message_outbox WHERE channel <> 'web' AND recipient_user_id = $1`, [u.userId]);
     expect(outbox.rows).toEqual([{ channel: 'sms', target: u.phone, status: 'pending' }]);
 
     const audit = await ctx.db.query(`SELECT action FROM audit_log WHERE entity_id = $1`, [u.userId]);

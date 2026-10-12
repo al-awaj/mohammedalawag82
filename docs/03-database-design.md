@@ -93,9 +93,9 @@ PostgreSQL 16. الامتدادات: `pgcrypto` (UUID)، `citext` (البريد)
 
 🧩 لاحقًا: `reconciliation_runs`, `reconciliation_items` (المطابقة مع كشوف المزودين والبنوك).
 
-## F. النزاعات والإشعارات والعروض والتقييمات (المرحلة 8) 🧩
+## F. النزاعات والإشعارات والعروض والتقييمات (المرحلة 8) ✅
 
-`disputes`, `dispute_events`, `dispute_evidence` (حماية من الحذف)، `notification_templates (key, channel, language, body)`, `reminder_rules`, `promotions (cost_bearer إلزامي)`, `promotion_redemptions`, `reviews (booking_id UNIQUE — تقييم واحد لكل حجز مكتمل)`.
+`disputes` (9 حالات، نزاع مفتوح واحد لكل طرف وحجز، held_amount)، `dispute_events` (append-only، visibility)، `dispute_evidence` (مشغل يمنع الحذف والتعديل عدا المشاركة)، `notification_templates (key, channel, language)`، `messaging_channels` (دولة × قناة، secret_ref)، أعمدة التسليم في `message_outbox` (subject, body, next_attempt_at, read_at)، `reminder_rules`, `booking_reminders`، `promotions` (cost_bearer إلزامي)، `promotion_redemptions`، أعمدة الخصم في `bookings` و`orders` و`provider_earnings.platform_discount`، `refunds.dispute_id/charge_to`، `reviews` (booking_id UNIQUE).
 
 ## G. المستندات (المرحلة 9) 🧩
 

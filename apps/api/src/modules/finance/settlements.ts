@@ -17,7 +17,7 @@ export async function eligibleEarnings(c: Executor, providerId: string, currency
     `SELECT e.id AS earning_id, e.booking_id, b.number AS booking_number, e.net_amount AS net, e.status,
             coalesce((SELECT sum(i.amount) FROM settlement_items i WHERE i.earning_id = e.id AND i.status = 'paid'), 0)::numeric(20,4)::text AS settled
        FROM provider_earnings e JOIN bookings b ON b.id = e.booking_id
-      WHERE e.provider_id = $1 AND e.currency_code = $2 AND e.status IN ('due', 'settlement_failed')
+      WHERE e.provider_id = $1 AND e.currency_code = $2 AND e.status IN ('due', 'settlement_failed', 're_reviewed')
         AND NOT EXISTS (SELECT 1 FROM settlement_items i WHERE i.earning_id = e.id AND i.status = 'pending')
       ORDER BY e.due_at NULLS LAST, e.created_at ${lock ? 'FOR UPDATE OF e' : ''}`, [providerId, currency])).rows;
   const items = rows.map((r) => ({ earningId: r.earning_id, bookingId: r.booking_id, bookingNumber: r.booking_number, amount: toUnits(r.net) - toUnits(r.settled) }))

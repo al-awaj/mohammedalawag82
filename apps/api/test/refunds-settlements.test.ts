@@ -245,7 +245,7 @@ describe('no-show applies the cancellation policy (owner decision)', () => {
     expect(r.body).toMatchObject({ status: 'no_show', quote: { hoursBefore: 0, refundPercent: 25, refund: '3750.0000', retained: '16250.0000' } });
     await completeRefundsByGateway(bookingId);
     expect(await earningOf(bookingId)).toEqual({ status: 'due', commission_amount: '1625.0000', net_amount: '14625.0000' });
-    expect((await ctx.db.query(`SELECT 1 FROM message_outbox WHERE recipient_user_id = $1 AND template_key = 'booking.no_show'`, [c.userId])).rowCount).toBe(1);
+    expect((await ctx.db.query(`SELECT 1 FROM message_outbox WHERE channel <> 'web' AND recipient_user_id = $1 AND template_key = 'booking.no_show'`, [c.userId])).rowCount).toBe(1);
   });
 
   it('goes to staff review when the booking has no policy', async () => {

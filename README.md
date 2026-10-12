@@ -2,7 +2,7 @@
 
 منصة متعددة الدول لحجز وشراء وإدارة خدمات الأعراس والحفلات وجميع المناسبات: تطبيق عملاء (Android/iOS)، موقع عملاء، لوحة إدارة مركزية، ولوحة ويب لأصحاب الخدمات — فوق واجهة خلفية واحدة.
 
-> **الحالة الحالية: المراحل 1 إلى 7 من 12.** راجع [`docs/00-roadmap.md`](docs/00-roadmap.md) لما نُفّذ وما لم يُنفّذ بعد. لا تُعد المنصة جاهزة للإنتاج.
+> **الحالة الحالية: المراحل 1 إلى 8 من 12.** راجع [`docs/00-roadmap.md`](docs/00-roadmap.md) لما نُفّذ وما لم يُنفّذ بعد. لا تُعد المنصة جاهزة للإنتاج.
 
 ## الوثائق
 
@@ -71,6 +71,9 @@ npm run typecheck
 | الإدارة: المالية | `/admin/payment-integrations[/:id/test]`, `/admin/payment-methods`, `/admin/accounts[/:id/statement]`, `/admin/ledger/trial-balance`, `/admin/payments[/:id/review]`, `/admin/payment-events`, `/admin/commission-rules`, `/admin/earnings[/:id/approve-review]` |
 | الإلغاء والاسترداد | `GET /bookings/:id/cancellation-preview`, `POST /bookings/:id/cancel`, `GET /bookings/:id/refunds`, `POST /provider/bookings/:id/{cancel,no-show}`, `GET/POST /admin/cancellation-requests[/:id/decide]`, `/admin/refunds[/:id/{approve,reject,execute,fail}]`, `POST /admin/bookings/:id/refunds`, `GET /admin/bookings/:id/refundable` |
 | التسويات | `GET /admin/settlements/preview`, `/admin/settlements[/:id/{approve,mark-paid,mark-failed,cancel}]`, `PATCH /admin/providers/:id/interim-settlement`, `GET /provider/settlements` |
+| النزاعات والشكاوى | `POST/GET /disputes`, `GET /disputes/:id`, `POST /disputes/:id/{statements,evidence}`, `/admin/disputes[/:id/{actions,hold,decide,settle}]`, `POST /admin/disputes/:id/evidence/:eid/share` |
+| الإشعارات | `GET /me/notifications`, `POST /me/notifications/{:id/read,read-all}`, `/admin/notification-templates`, `/admin/messaging-channels`, `/admin/notifications[/:id/retry]`, `/admin/reminder-rules` |
+| العروض والتقييمات | `POST /cart/coupon`, `couponCode` في `POST /checkout`, `/admin/promotions`, `/provider/promotions`, `POST /bookings/:id/review`, `GET /services/:id/reviews`, `/provider/reviews[/:id/report]`, `/admin/reviews[/:id/moderate]` |
 | الإدارة: الإعدادات والتدقيق | `GET /admin/settings`, `PUT /admin/settings/:key`, `GET /admin/settings/:key/history`, `GET /admin/audit-log` |
 
 صيغة الأخطاء موحدة ومترجمة حسب `Accept-Language`:

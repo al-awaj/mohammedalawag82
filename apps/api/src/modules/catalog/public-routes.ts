@@ -23,7 +23,8 @@ const searchQuery = z.object({
   attrs: z.string().max(2000).optional(),
   // Local date in the country's timezone: keeps services that are open that day and not fully occupied.
   date: z.iso.date().optional(),
-  sort: z.enum(['newest', 'price_asc', 'price_desc', 'distance']).default('newest'),
+  minRating: z.coerce.number().min(1).max(5).optional(),
+  sort: z.enum(['newest', 'price_asc', 'price_desc', 'distance', 'rating']).default('newest'),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -87,6 +88,8 @@ export async function catalogPublicRoutes(app: App, deps: Deps) {
     if (q.minPrice) add((n) => `${priceExpr} >= ${n}::numeric`, q.minPrice);
     if (q.maxPrice) add((n) => `${priceExpr} <= ${n}::numeric`, q.maxPrice);
     if (q.minCapacity) add((n) => `s.capacity >= ${n}`, q.minCapacity);
+    const ratingExpr = `(SELECT avg(rv.rating) FROM reviews rv WHERE rv.service_id = s.id AND rv.status = 'published')`;
+    if (q.minRating) add((n) => `${ratingExpr} >= ${n}`, q.minRating);
 
     if (q.date) {
       // Open that weekday (or no opening rules) and some capacity left during the local day. For time-slot
@@ -138,13 +141,14 @@ export async function catalogPublicRoutes(app: App, deps: Deps) {
         cos(radians(${la}::float8)) * cos(radians(s.latitude::float8)) * power(sin(radians((s.longitude::float8 - ${ln}::float8) / 2)), 2))) END`;
       if (q.radiusKm) add((n) => `(${distance}) <= ${n}`, q.radiusKm);
     }
-    const order = { newest: 's.published_at DESC', price_asc: 'from_price ASC', price_desc: 'from_price DESC', distance: 'distance_km ASC NULLS LAST' }[q.sort];
+    const order = { newest: 's.published_at DESC', price_asc: 'from_price ASC', price_desc: 'from_price DESC', distance: 'distance_km ASC NULLS LAST', rating: 'rating DESC NULLS LAST' }[q.sort];
     params.push(q.limit, q.offset);
     const { rows } = await db.query(
       `SELECT s.id, s.title, s.city, s.base_price AS "basePrice", ${priceExpr} AS from_price, s.currency_code AS currency,
               s.pricing_unit AS "pricingUnit", s.capacity, s.requires_provider_approval AS "requiresProviderApproval",
               t.code AS "typeCode", t.name AS "typeName", s.country_id, p.business_name AS provider_name, p.show_identity,
-              (${distance}) AS distance_km,
+              (${distance}) AS distance_km, round(${ratingExpr}, 2)::text AS rating,
+              (SELECT count(*)::int FROM reviews rv WHERE rv.service_id = s.id AND rv.status = 'published') AS review_count,
               (SELECT m.id FROM service_media m WHERE m.service_id = s.id AND m.kind = 'image' ORDER BY m.sort_order LIMIT 1) AS cover_id,
               count(*) OVER() AS total
          FROM services s JOIN service_types t ON t.id = s.service_type_id JOIN service_categories cat ON cat.id = t.category_id
@@ -162,6 +166,7 @@ export async function catalogPublicRoutes(app: App, deps: Deps) {
         typeCode: r.typeCode, typeName: r.typeName,
         providerName: platformShows && r.show_identity ? r.provider_name : null,
         distanceKm: r.distance_km === null ? null : Math.round(r.distance_km * 10) / 10,
+        rating: r.rating, reviewCount: r.review_count,
         coverUrl: r.cover_id ? `/v1/media/${r.cover_id}` : null,
       })),
     };

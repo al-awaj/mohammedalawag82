@@ -32,6 +32,10 @@ import { catalogPublicRoutes } from './modules/catalog/public-routes.js';
 import { availabilityRoutes } from './modules/availability/routes.js';
 import { bookingRoutes } from './modules/booking/routes.js';
 import { financeRoutes } from './modules/finance/routes.js';
+import { notificationRoutes } from './modules/notifications/routes.js';
+import { disputeRoutes } from './modules/disputes/routes.js';
+import { promotionRoutes } from './modules/promotions/routes.js';
+import { reviewRoutes } from './modules/reviews/routes.js';
 
 export async function buildApp(config: Config, db: Db) {
   const app = Fastify({
@@ -119,6 +123,10 @@ export async function buildApp(config: Config, db: Db) {
     await availabilityRoutes(v1, deps);
     await bookingRoutes(v1, deps);
     await financeRoutes(v1, deps);
+    await notificationRoutes(v1, deps);
+    await disputeRoutes(v1, deps);
+    await promotionRoutes(v1, deps);
+    await reviewRoutes(v1, deps);
   }, { prefix: '/v1' });
 
   return app;

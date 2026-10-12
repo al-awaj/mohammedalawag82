@@ -39,6 +39,9 @@ export interface Quote {
   quantityFactor: string;
   addOns: { code: string; name: unknown; price: string }[];
   subtotal: string;
+  discountAmount: string;
+  discountPlatformBorne: string;
+  discountProviderBorne: string;
   total: string;
   depositType: 'none' | 'fixed' | 'percent';
   depositValue: string;
@@ -65,7 +68,7 @@ interface SvcRow {
  * Prices a requested item exactly as it would be booked now. All amounts are decimal strings computed
  * with integer arithmetic and rounded to the currency's minor units. Throws if the item cannot be booked.
  */
-export async function quote(exec: Executor, input: ItemInput): Promise<Quote> {
+export async function quote(exec: Executor, input: ItemInput, discount?: { amount: bigint; platformBorne: bigint; providerBorne: bigint }): Promise<Quote> {
   const s = (await exec.query<SvcRow>(
     `SELECT s.id, s.service_type_id, s.provider_id, s.country_id, s.status, p.status AS provider_status, s.title, s.terms, s.base_price, s.currency_code,
             s.pricing_unit, s.duration_minutes, s.capacity, s.requires_provider_approval, s.deposit_type, s.deposit_value,
@@ -155,7 +158,9 @@ export async function quote(exec: Executor, input: ItemInput): Promise<Quote> {
   });
   const base = roundToMinor(mulDiv(unitPrice, num, den), minor);
   const subtotal = base + sum(chosen.map((a) => roundToMinor(toUnits(a.price), minor)));
-  const total = subtotal;
+  // A coupon lowers what the customer pays; the deposit is computed on the discounted total.
+  const disc = discount && discount.amount > 0n ? (discount.amount > subtotal ? { ...discount, amount: subtotal } : discount) : { amount: 0n, platformBorne: 0n, providerBorne: 0n };
+  const total = subtotal - disc.amount;
 
   // ---- Deposit: what secures the booking. No deposit means the full amount is due upfront.
   const depositType = pkg ? pkg.deposit_type : s.deposit_type;
@@ -177,7 +182,8 @@ export async function quote(exec: Executor, input: ItemInput): Promise<Quote> {
     start, end, calendarUnits: rental ? input.units : 1, units: input.units, guests: input.guests, currency, pricingUnit,
     unitPrice: fromUnits(unitPrice), quantityFactor: num % den === 0n ? String(num / den) : (Number(num) / Number(den)).toFixed(6),
     addOns: chosen.map((a) => ({ code: a.code, name: a.name, price: fromUnits(roundToMinor(toUnits(a.price), minor)) })),
-    subtotal: fromUnits(subtotal), total: fromUnits(total), depositType, depositValue, upfrontAmount: fromUnits(upfront), balanceDueAt,
+    subtotal: fromUnits(subtotal), total: fromUnits(total),
+    discountAmount: fromUnits(disc.amount), discountPlatformBorne: fromUnits(disc.platformBorne), discountProviderBorne: fromUnits(disc.providerBorne), depositType, depositValue, upfrontAmount: fromUnits(upfront), balanceDueAt,
     securityDepositAmount: rental ? fromUnits(mulDiv(toUnits(item!.security_deposit), input.units)) : '0.0000',
     requiresProviderApproval: s.requires_provider_approval,
     serviceTitle: s.title, packageName: pkg?.name ?? null, cancellationPolicy: s.cancellation_policy,

@@ -9,7 +9,7 @@ import { idParams, paginationQuery, reasonSchema } from '../common.js';
 import { providerOf } from '../catalog/shared.js';
 import { identityVisible } from '../catalog/queries.js';
 import { itemInput, quote } from './pricing.js';
-import { addToCart, checkout, OCCUPYING, providerDecision, providerExecution, viewCart } from './service.js';
+import { addToCart, checkout, OCCUPYING, previewCoupon, providerDecision, providerExecution, viewCart } from './service.js';
 import { cancelBooking, decideCancellationRequest, markNoShow, quoteCancellation } from './cancellation.js';
 
 const sec = [{ bearer: [] }];
@@ -52,6 +52,7 @@ function bookingSelect(audience: 'customer' | 'provider' | 'staff') {
       b.deposit_type AS "depositType", b.deposit_value AS "depositValue", b.upfront_amount AS "upfrontAmount", b.balance_due_at AS "balanceDueAt",
       b.security_deposit_amount AS "securityDepositAmount", b.cancellation_policy AS "cancellationPolicy", b.terms_snapshot AS "termsSnapshot",
       b.requires_provider_approval AS "requiresProviderApproval", b.hold_expires_at AS "holdExpiresAt", b.approval_deadline AS "approvalDeadline",
+      b.discount_amount AS "discountAmount", b.discount_platform_borne AS "discountPlatformBorne", b.discount_provider_borne AS "discountProviderBorne",
       b.decision_reason AS "decisionReason", b.customer_notes AS "customerNotes", b.created_at AS "createdAt",
       pd.paid AS "paidAmount", (b.total - pd.paid::numeric)::numeric(20,4)::text AS "remainingAmount",
       p.business_name AS "providerName", p.show_identity AS "_showIdentity", b.country_id AS "_countryId",
@@ -204,6 +205,10 @@ export async function bookingRoutes(app: App, deps: Deps) {
     return reply.status(201).send({ id: r.id, total: r.quote.total, currency: r.quote.currency, upfrontAmount: r.quote.upfrontAmount });
   });
 
+  app.post('/cart/coupon', {
+    ...customer, schema: { tags: ['cart'], security: sec, body: z.object({ code: z.string().trim().min(3).max(30), itemIds: z.array(z.uuid()).max(50).optional() }) },
+  }, async (req) => previewCoupon(db, requireUser(req).id, req.body.code, req.body.itemIds));
+
   app.delete('/cart/items/:id', { ...customer, schema: { tags: ['cart'], security: sec, params: idParams } }, async (req, reply) => {
     const r = await db.query('DELETE FROM cart_items WHERE id = $1 AND customer_id = $2', [req.params.id, requireUser(req).id]);
     if (!r.rowCount) throw notFound();
@@ -215,12 +220,12 @@ export async function bookingRoutes(app: App, deps: Deps) {
     schema: {
       tags: ['cart'], security: sec,
       headers: z.object({ 'idempotency-key': z.string().min(8).max(100).optional() }).passthrough(),
-      body: z.object({ itemIds: z.array(z.uuid()).min(1).max(50).optional(), acceptTerms: z.boolean() }),
+      body: z.object({ itemIds: z.array(z.uuid()).min(1).max(50).optional(), acceptTerms: z.boolean(), couponCode: z.string().trim().max(30).optional() }),
     },
   }, async (req, reply) => {
     const key = req.headers['idempotency-key'];
     if (typeof key !== 'string') throw badRequest('IDEMPOTENCY_KEY_REQUIRED');
-    const r = await checkout(db, requireUser(req).id, { itemIds: req.body.itemIds, acceptTerms: req.body.acceptTerms, idempotencyKey: key }, actorOf(req));
+    const r = await checkout(db, requireUser(req).id, { itemIds: req.body.itemIds, acceptTerms: req.body.acceptTerms, idempotencyKey: key, couponCode: req.body.couponCode }, actorOf(req));
     const order = await loadOrder(db, r.orderId, 'customer');
     return reply.status(r.replayed ? 200 : 201).send(order);
   });
