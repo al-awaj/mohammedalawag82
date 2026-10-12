@@ -65,6 +65,7 @@ describe('provider registration (test 2)', () => {
     const code = await latestCode(ctx, p.userId, 'auth.verify_phone');
     await api(ctx, 'POST', '/v1/auth/verification/confirm', { token: p.token, body: { channel: 'phone', code } });
 
+    expect((await api(ctx, 'GET', `/v1/provider-applications/requirements?country=${country.code}`, { token: p.token })).body).toEqual({ requiredDocuments: ['identity', 'commercial_registration'] });
     const incomplete = await api(ctx, 'POST', `/v1/provider-applications/${id}/submit`, { token: p.token, body: { acceptTerms: true } });
     expect(incomplete.body.error).toMatchObject({ code: 'APPLICATION_INCOMPLETE', details: { missingDocuments: ['identity', 'commercial_registration'] } });
 

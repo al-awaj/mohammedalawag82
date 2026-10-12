@@ -56,8 +56,8 @@ export const ENUMS: Record<string, Dict> = {
   },
   disputeType: {
     service_not_delivered: { ar: 'لم تُقدَّم الخدمة', en: 'Service not delivered' }, service_quality: { ar: 'جودة الخدمة', en: 'Service quality' },
-    billing: { ar: 'الفوترة', en: 'Billing' }, refund: { ar: 'استرداد', en: 'Refund' }, cancellation: { ar: 'إلغاء', en: 'Cancellation' },
-    damage: { ar: 'أضرار', en: 'Damage' }, conduct: { ar: 'السلوك', en: 'Conduct' }, other: { ar: 'أخرى', en: 'Other' },
+    billing: { ar: 'الفوترة', en: 'Billing' }, refund: { ar: 'استرداد', en: 'Refund' },
+    damage: { ar: 'أضرار', en: 'Damage' }, behaviour: { ar: 'السلوك', en: 'Behaviour' }, other: { ar: 'أخرى', en: 'Other' },
   },
   service: {
     draft: { ar: 'مسودة', en: 'Draft' }, pending_review: { ar: 'بانتظار المراجعة', en: 'Pending review' },

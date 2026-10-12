@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { App, Deps } from '../../deps.js';
 import { actorOf, can, countryScope, requireKind, requirePermission, requireUser } from '../../auth/guard.js';
 import { audit } from '../../lib/audit.js';
+import { getSetting } from '../settings/registry.js';
 import { badRequest, notFound } from '../../lib/errors.js';
 import { emailSchema, idParams, paginationQuery, phoneSchema, reasonSchema } from '../common.js';
 import { ProviderApplicationService, STAFF_TRANSITIONS, type StaffAction } from './service.js';
@@ -50,6 +51,15 @@ export async function providerRoutes(app: App, deps: Deps) {
   // ---------------- Applicant (provider account) ----------------
   app.post('/provider-applications', { ...providerOnly, schema: { tags: ['provider-onboarding'], security: [{ bearer: [] }], body: fields } },
     async (req, reply) => reply.status(201).send({ id: await svc.create(requireUser(req), req.body, actorOf(req)) }));
+
+  /** What an application in a country must include, so the form can ask for it up front. */
+  app.get('/provider-applications/requirements', {
+    ...providerOnly, schema: { tags: ['provider-onboarding'], security: [{ bearer: [] }], querystring: z.object({ country: z.string().length(2).toUpperCase() }) },
+  }, async (req) => {
+    const c = (await db.query<{ id: string }>('SELECT id FROM countries WHERE code = $1 AND is_active', [req.query.country])).rows[0];
+    if (!c) throw notFound();
+    return { requiredDocuments: await getSetting(db, 'providers.required_documents', c.id) };
+  });
 
   app.get('/provider-applications/mine', { ...providerOnly, schema: { tags: ['provider-onboarding'], security: [{ bearer: [] }] } }, async (req) => {
     const ids = (await db.query<{ id: string }>('SELECT id FROM provider_applications WHERE user_id = $1 ORDER BY created_at DESC', [requireUser(req).id])).rows;
