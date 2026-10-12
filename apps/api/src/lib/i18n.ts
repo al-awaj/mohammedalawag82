@@ -86,6 +86,8 @@ const messages: Record<string, Record<Lang, string>> = {
   COUPON_INVALID: { ar: 'الكوبون غير صالح أو منتهٍ أو لا ينطبق على هذه الخدمات', en: 'The coupon is invalid, expired or not applicable' },
   COUPON_LIMIT_REACHED: { ar: 'تم استنفاد عدد مرات استخدام الكوبون', en: 'The coupon usage limit has been reached' },
   REVIEW_NOT_ALLOWED: { ar: 'لا يمكن تقييم هذا الحجز', en: 'This booking cannot be reviewed' },
+  FX_RATE_MISSING: { ar: 'لا يوجد سعر صرف معتمد للتحويل في التاريخ المطلوب', en: 'No approved exchange rate for the requested conversion date' },
+  RECONCILIATION_ITEM_RESOLVED: { ar: 'تمت معالجة هذا البند مسبقًا', en: 'This item has already been resolved' },
   ALREADY_VERIFIED: { ar: 'تم التحقق مسبقًا', en: 'Already verified' },
   INVALID_STATUS_TRANSITION: { ar: 'لا يمكن تنفيذ هذا الإجراء في الحالة الحالية', en: 'This action is not allowed in the current status' },
   REASON_REQUIRED: { ar: 'يجب ذكر السبب', en: 'A reason is required' },

@@ -27,3 +27,11 @@ describe('money', () => {
     expect(fromUnits(roundToMinor(toUnits('1.005'), 2))).toBe('1.0100');
   });
 });
+
+describe('currency conversion', () => {
+  it('multiplies by a rate exactly', async () => {
+    const { mulRate } = await import('../src/lib/money.js');
+    expect(fromUnits(mulRate(toUnits('1000'), '3.7500000000'))).toBe('3750.0000');
+    expect(fromUnits(mulRate(toUnits('100'), '0.2666666667'))).toBe('26.6667');
+  });
+});

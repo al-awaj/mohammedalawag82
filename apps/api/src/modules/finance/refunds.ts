@@ -7,6 +7,7 @@ import { enqueueMessage } from '../../lib/outbox.js';
 import { closeBookingFinancials } from './earnings.js';
 import { adapterFor, type IntegrationRow } from './gateways.js';
 import { post, systemAccount } from './ledger.js';
+import { issueRefundNote } from '../documents/service.js';
 
 export type RefundSource = 'cancellation_policy' | 'provider_cancellation' | 'admin_cancellation' | 'no_show_policy' | 'slot_unavailable' | 'booking_cancelled' | 'manual' | 'dispute';
 
@@ -164,6 +165,7 @@ export async function completeRefund(c: Executor, id: string, ctx: ActorContext)
   await c.query(`UPDATE refunds SET status = 'completed', executed_at = now() WHERE id = $1`, [id]);
   await recordStatus(c, id, r.status, 'completed', ctx, null);
   await audit(c, ctx, { action: 'refund.completed', entityType: 'refund', entityId: id });
+  await issueRefundNote(c, id);
   await notifyCustomer(c, r.customer_id, 'refund.completed', { refundId: id, number: r.number, amount: r.amount });
   await closeBookingFinancials(c, r.booking_id, ctx);
   return { changed: true };

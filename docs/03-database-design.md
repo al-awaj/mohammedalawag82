@@ -97,6 +97,6 @@ PostgreSQL 16. الامتدادات: `pgcrypto` (UUID)، `citext` (البريد)
 
 `disputes` (9 حالات، نزاع مفتوح واحد لكل طرف وحجز، held_amount)، `dispute_events` (append-only، visibility)، `dispute_evidence` (مشغل يمنع الحذف والتعديل عدا المشاركة)، `notification_templates (key, channel, language)`، `messaging_channels` (دولة × قناة، secret_ref)، أعمدة التسليم في `message_outbox` (subject, body, next_attempt_at, read_at)، `reminder_rules`, `booking_reminders`، `promotions` (cost_bearer إلزامي)، `promotion_redemptions`، أعمدة الخصم في `bookings` و`orders` و`provider_earnings.platform_discount`، `refunds.dispute_id/charge_to`، `reviews` (booking_id UNIQUE).
 
-## G. المستندات (المرحلة 9) 🧩
+## G. التقارير والمستندات والمطابقة (المرحلة 9) ✅
 
-`documents (kind: invoice/receipt/deposit_receipt/refund_note/settlement_note/dispute_record, number UNIQUE per country+kind+year, entity refs, language, file_key, totals snapshot)`.
+`document_counters (country, kind, year, last_value)`؛ `documents` (kind: invoice/payment_receipt/deposit_receipt/refund_note/settlement_note، number UNIQUE، مصدر المستند، الأطراف، العملة والإجمالي، `data` لقطة مجمدة، UNIQUE NULLS NOT DISTINCT (kind, source_id, booking_id)، مشغل يمنع التعديل والحذف)؛ `report_runs` (append-only: التقرير، المعاملات، أسعار الصرف المستخدمة، الصيغة، المُصدِّر)؛ `reconciliation_runs` (append-only) و`reconciliation_items` (6 حالات، مشغل يسمح فقط بتسجيل المعالجة مرة واحدة). الكشوف غير المرقمة (كشف الحجز، الرصيد المتبقي، سجل المدفوعات، سجل النزاع) تُولّد عند الطلب ولا تُخزن.

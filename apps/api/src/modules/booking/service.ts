@@ -11,6 +11,7 @@ import { quote, type ItemInput, type Quote } from './pricing.js';
 import { computeCommission } from '../finance/commission.js';
 import { evaluateCoupon } from '../promotions/service.js';
 import { onBookingCompleted } from '../finance/earnings.js';
+import { issueInvoice } from '../documents/service.js';
 
 export type BookingStatus =
   | 'pending_provider_approval' | 'awaiting_payment' | 'confirmed' | 'in_progress' | 'completed' | 'no_show'
@@ -375,6 +376,8 @@ export async function confirmAfterPayment(c: pg.PoolClient, bookingId: string, c
   if (!b.calendar_block_id) throw conflict('SLOT_UNAVAILABLE');
   const block = await confirmHold(c, b.calendar_block_id, b.id, ctx.actorId);
   await transition(c, b, 'confirmed', ctx, null, { calendar_block_id: block.id, hold_expires_at: null });
+  // Booking invoice, numbered and frozen at confirmation (clause 65).
+  await issueInvoice(c, b.id);
   await notify(c, b.customer_id, 'booking.confirmed', { bookingId: b.id, number: b.number });
   await notify(c, await providerUserId(c, b.provider_id), 'booking.confirmed', { bookingId: b.id, number: b.number });
   return b;

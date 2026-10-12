@@ -62,6 +62,7 @@
 | `reports.view` | reports | عرض التقارير — View reports |
 | `reports.export` | reports | تصدير التقارير — Export reports |
 | `documents.print` | reports | طباعة المستندات — Print documents |
+| `finance.reconcile` | finance | مطابقة الحسابات مع كشوف المزودين والبنوك — Reconcile with provider and bank statements |
 
 ## الأدوار النظامية
 
@@ -71,7 +72,7 @@
 | `manager` | مدير | الكل عدا `roles.manage`, `settings.manage`, `payment_settings.manage` |
 | `support_agent` | موظف دعم | `customers.view`, `providers.view`, `bookings.view`, `disputes.view`, `disputes.review`, `services.view` |
 | `bookings_agent` | موظف حجوزات | `customers.view`, `providers.view`, `services.view`, `bookings.view`, `bookings.accept`, `bookings.cancel`, `bookings.manage` |
-| `finance_officer` | موظف مالي | `finance.view`, `providers.view`, `providers.view_sensitive`, `bookings.view`, `payments.review`, `payments.approve`, `refunds.execute`, `settlements.approve`, `accounts.manage`, `exchange_rates.manage`, `reports.view`, `reports.export`, `documents.print` |
+| `finance_officer` | موظف مالي | `finance.view`, `providers.view`, `providers.view_sensitive`, `bookings.view`, `payments.review`, `payments.approve`, `refunds.execute`, `settlements.approve`, `accounts.manage`, `exchange_rates.manage`, `reports.view`, `reports.export`, `documents.print`, `finance.reconcile` |
 | `payment_reviewer` | موظف مراجعة مدفوعات | `finance.view`, `bookings.view`, `payments.review` |
 | `services_supervisor` | مشرف خدمات | `providers.view`, `providers.manage`, `provider_applications.view`, `provider_applications.review`, `provider_applications.approve`, `provider_applications.reject`, `categories.manage`, `service_types.manage`, `services.view`, `services.manage`, `services.publish`, `services.unpublish`, `reviews.moderate` |
 

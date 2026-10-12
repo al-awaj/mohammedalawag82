@@ -4,6 +4,7 @@ import { badRequest, conflict, forbidden, notFound } from '../../lib/errors.js';
 import { fromUnits, percentOf, toUnits } from '../../lib/money.js';
 import { enqueueMessage } from '../../lib/outbox.js';
 import { post, systemAccount } from './ledger.js';
+import { issueSettlementNote } from '../documents/service.js';
 
 interface EligibleRow { earning_id: string; booking_id: string; booking_number: string; net: string; settled: string; status: string }
 
@@ -134,6 +135,7 @@ export async function markSettlementPaid(c: Executor, id: string, externalRef: s
   if (s.kind === 'regular') for (const i of items) await earningStatus(c, i.earning_id, 'settled', ctx, `paid in ${s.number}`);
   await recordStatus(c, id, s.status, 'paid', ctx, null);
   await audit(c, ctx, { action: 'settlement.paid', entityType: 'settlement', entityId: id, after: { externalRef, amount: s.amount } });
+  await issueSettlementNote(c, id);
   const u = (await c.query<{ id: string; phone: string | null; preferred_language: string }>(
     'SELECT u.id, u.phone, u.preferred_language FROM providers p JOIN users u ON u.id = p.user_id WHERE p.id = $1', [s.provider_id])).rows[0]!;
   if (u.phone) await enqueueMessage(c, { channel: 'sms', recipientUserId: u.id, target: u.phone, templateKey: 'settlement.paid', language: u.preferred_language, payload: { settlementId: id, number: s.number, amount: s.amount } });

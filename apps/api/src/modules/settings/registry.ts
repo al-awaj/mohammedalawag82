@@ -105,6 +105,12 @@ export const SETTINGS = {
     scopes: ['global', 'country'],
     description: { ar: 'إظهار اسم صاحب الخدمة في الواجهات العامة ', en: 'Show provider name on public pages' },
   }),
+  'documents.platform_name': def({
+    schema: z.object({ ar: z.string().trim().min(1).max(200), en: z.string().trim().min(1).max(200) }),
+    default: { ar: 'المنصة', en: 'Platform' },
+    scopes: ['global', 'country'],
+    description: { ar: 'اسم المنصة كما يظهر على الفواتير والإيصالات (يُحفظ في المستند عند إصداره)', en: 'Platform name printed on invoices and receipts (frozen into each document at issue)' },
+  }),
 } as const;
 
 export type SettingKey = keyof typeof SETTINGS;

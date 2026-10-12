@@ -11,6 +11,7 @@ import { syncEarning } from './earnings.js';
 import { completeRefund, failRefund } from './refunds.js';
 import { adapterFor, type IntegrationRow } from './gateways.js';
 import { post, systemAccount } from './ledger.js';
+import { issuePaymentReceipt } from '../documents/service.js';
 
 export type Model = 'platform' | 'direct';
 export type Method = 'card' | 'wallet' | 'bank_transfer' | 'cash';
@@ -246,6 +247,8 @@ export async function markSucceeded(c: pg.PoolClient, paymentId: string, verifie
     }
   }
   await audit(c, ctx, { action: 'payment.succeeded', entityType: 'payment', entityId: p.id, after: { verified, fee } });
+  // Receipt (or deposit receipt) for money the platform received; none for direct payments (clause 65).
+  await issuePaymentReceipt(c, p.id);
   await notifyCustomer(c, p, 'payment.succeeded', { amount: verified });
   return { changed: true };
 }

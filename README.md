@@ -2,7 +2,7 @@
 
 منصة متعددة الدول لحجز وشراء وإدارة خدمات الأعراس والحفلات وجميع المناسبات: تطبيق عملاء (Android/iOS)، موقع عملاء، لوحة إدارة مركزية، ولوحة ويب لأصحاب الخدمات — فوق واجهة خلفية واحدة.
 
-> **الحالة الحالية: المراحل 1 إلى 8 من 12.** راجع [`docs/00-roadmap.md`](docs/00-roadmap.md) لما نُفّذ وما لم يُنفّذ بعد. لا تُعد المنصة جاهزة للإنتاج.
+> **الحالة الحالية: المراحل 1 إلى 9 من 12.** راجع [`docs/00-roadmap.md`](docs/00-roadmap.md) لما نُفّذ وما لم يُنفّذ بعد. لا تُعد المنصة جاهزة للإنتاج.
 
 ## الوثائق
 
@@ -74,6 +74,9 @@ npm run typecheck
 | النزاعات والشكاوى | `POST/GET /disputes`, `GET /disputes/:id`, `POST /disputes/:id/{statements,evidence}`, `/admin/disputes[/:id/{actions,hold,decide,settle}]`, `POST /admin/disputes/:id/evidence/:eid/share` |
 | الإشعارات | `GET /me/notifications`, `POST /me/notifications/{:id/read,read-all}`, `/admin/notification-templates`, `/admin/messaging-channels`, `/admin/notifications[/:id/retry]`, `/admin/reminder-rules` |
 | العروض والتقييمات | `POST /cart/coupon`, `couponCode` في `POST /checkout`, `/admin/promotions`, `/provider/promotions`, `POST /bookings/:id/review`, `GET /services/:id/reviews`, `/provider/reviews[/:id/report]`, `/admin/reviews[/:id/moderate]` |
+| التقارير | `GET /admin/reports`, `GET /admin/reports/:report` (`overview`, `revenue`, `commissions`, `payments-by-method`, `payments-by-currency`, `refunds`, `provider-earnings`, `settlements`, `fund-balances`, `fx-differences`, `bookings-payments`, `discounts`, `disputes`, `trial-balance`, `consolidated`؛ مع `country`, `currency`, `from`, `to`, `providerId`, `serviceTypeId`, `displayCurrency`+`rateDate`, `format=csv`), `GET /provider/reports/summary` |
+| المستندات والكشوف | `GET /documents[/:id]` (`format=html&lang=ar|en` للطباعة), `GET /bookings/:id/{statement,balance-notice}`, `GET /me/payment-history`, `GET /disputes/:id/record`, `GET /admin/documents` |
+| المطابقة | `POST/GET /admin/reconciliation/runs[/:id]`, `POST /admin/reconciliation/items/:id/resolve`, `GET /admin/reconciliation/checks` |
 | الإدارة: الإعدادات والتدقيق | `GET /admin/settings`, `PUT /admin/settings/:key`, `GET /admin/settings/:key/history`, `GET /admin/audit-log` |
 
 صيغة الأخطاء موحدة ومترجمة حسب `Accept-Language`:
@@ -83,6 +86,6 @@ npm run typecheck
 
 ## ملاحظات تشغيلية
 
-- الرسائل (رموز التحقق وإشعارات قرارات التسجيل) تُكتب في جدول `message_outbox` بحالة `pending` ضمن نفس المعاملة؛ **لا تُرسل فعليًا** حتى ربط مزودي SMS/البريد/WhatsApp وعامل الإرسال في المرحلة 8. في التطوير يمكن قراءة الرمز من الجدول مباشرة.
+- الرسائل (رموز التحقق وإشعارات قرارات التسجيل) تُكتب في جدول `message_outbox` بحالة `pending` ضمن نفس المعاملة؛ تُرسل عبر عامل الإرسال (`npm run worker`) إلى قناة مهيأة لكل دولة؛ بدون قناة مهيأة تُسجل فاشلة ولا يُدّعى إرسالها. في التطوير يمكن قراءة الرمز من الجدول مباشرة.
 - إنشاء الامتدادات (`pgcrypto`, `citext`, `btree_gist`) في الترحيل الأول يتطلب صلاحية كافية لمستخدم القاعدة أو إنشاؤها مسبقًا من مسؤول القاعدة.
 - الترحيلات المطبقة غير قابلة للتعديل (يُتحقق من checksum)؛ أي تغيير يكون بملف ترحيل جديد.

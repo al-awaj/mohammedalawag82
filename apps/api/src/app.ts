@@ -36,6 +36,9 @@ import { notificationRoutes } from './modules/notifications/routes.js';
 import { disputeRoutes } from './modules/disputes/routes.js';
 import { promotionRoutes } from './modules/promotions/routes.js';
 import { reviewRoutes } from './modules/reviews/routes.js';
+import { reportRoutes } from './modules/reports/routes.js';
+import { documentRoutes } from './modules/documents/routes.js';
+import { reconciliationRoutes } from './modules/reconciliation/routes.js';
 
 export async function buildApp(config: Config, db: Db) {
   const app = Fastify({
@@ -127,6 +130,9 @@ export async function buildApp(config: Config, db: Db) {
     await disputeRoutes(v1, deps);
     await promotionRoutes(v1, deps);
     await reviewRoutes(v1, deps);
+    await reportRoutes(v1, deps);
+    await documentRoutes(v1, deps);
+    await reconciliationRoutes(v1, deps);
   }, { prefix: '/v1' });
 
   return app;

@@ -59,6 +59,7 @@ export const PERMISSIONS = {
   'reports.view': { module: 'reports', ar: 'عرض التقارير', en: 'View reports' },
   'reports.export': { module: 'reports', ar: 'تصدير التقارير', en: 'Export reports' },
   'documents.print': { module: 'reports', ar: 'طباعة المستندات', en: 'Print documents' },
+  'finance.reconcile': { module: 'finance', ar: 'مطابقة الحسابات مع كشوف المزودين والبنوك', en: 'Reconcile with provider and bank statements' },
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -82,7 +83,7 @@ export const SYSTEM_ROLES: { code: string; ar: string; en: string; permissions: 
     code: 'finance_officer', ar: 'موظف مالي', en: 'Finance officer',
     permissions: ['finance.view', 'providers.view', 'providers.view_sensitive', 'bookings.view', 'payments.review',
       'payments.approve', 'refunds.execute', 'settlements.approve', 'accounts.manage', 'exchange_rates.manage',
-      'reports.view', 'reports.export', 'documents.print'],
+      'reports.view', 'reports.export', 'documents.print', 'finance.reconcile'],
   },
   {
     code: 'payment_reviewer', ar: 'موظف مراجعة مدفوعات', en: 'Payment reviewer',

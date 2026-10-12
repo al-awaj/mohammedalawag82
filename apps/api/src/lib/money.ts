@@ -51,3 +51,12 @@ export function roundToMinor(v: Units, minorUnits: number): Units {
 
 export const sum = (values: Units[]): Units => values.reduce((a, b) => a + b, 0n);
 export const min = (a: Units, b: Units): Units => (a < b ? a : b);
+
+/** amount × exchange rate (up to 10 decimals), rounded half-up to 4 decimals; exact, no floats. */
+export function mulRate(v: Units, rate: string): Units {
+  const m = /^(\d+)(?:\.(\d{1,10}))?$/.exec(rate.trim());
+  if (!m) throw new Error(`invalid rate: ${rate}`);
+  const frac = (m[2] ?? '').padEnd(10, '0');
+  const rateUnits = BigInt(m[1]!) * 10n ** 10n + BigInt(frac);
+  return mulDiv(v, rateUnits, 10n ** 10n);
+}
