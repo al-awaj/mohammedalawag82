@@ -26,5 +26,6 @@ export default defineConfig({
     { command: 'node --import tsx src/server.ts', cwd: '../apps/api', port: E2E.apiPort, reuseExistingServer: false, timeout: 60_000, env: apiEnv },
     web('admin', E2E.adminPort),
     web('provider', E2E.providerPort),
+    web('web', E2E.webPort),
   ],
 });

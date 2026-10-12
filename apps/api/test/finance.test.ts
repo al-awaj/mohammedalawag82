@@ -88,7 +88,7 @@ beforeAll(async () => {
   hallType = (await api(ctx, 'POST', '/v1/admin/service-types', { token: admin.token, body: { categoryId, code: `t_${uniq()}`.slice(0, 40), name: { en: 'Hall' }, bookingMode: 'full_day', pricingUnits: ['fixed'] } })).body.id;
 
   gatewayAccount = (await api(ctx, 'POST', '/v1/admin/accounts', { token: admin.token, body: { countryId: country.id, currency: 'SAR', kind: 'gateway', suffix: 'SBX', name: { en: 'Sandbox gateway' } } })).body.id;
-  bankAccount = (await api(ctx, 'POST', '/v1/admin/accounts', { token: admin.token, body: { countryId: country.id, currency: 'SAR', kind: 'bank', suffix: '01', name: { en: 'Main bank' }, details: { iban: 'SA00 0000' } } })).body.id;
+  bankAccount = (await api(ctx, 'POST', '/v1/admin/accounts', { token: admin.token, body: { countryId: country.id, currency: 'SAR', kind: 'bank', suffix: '01', name: { en: 'Main bank' }, details: { iban: 'SA00 0000', internalNote: 'ops only', paymentInstructions: { ar: 'حوّل إلى الآيبان SA00 0000', en: 'Transfer to IBAN SA00 0000' } } } })).body.id;
   const integ = await api(ctx, 'POST', '/v1/admin/payment-integrations', {
     token: admin.token, body: { providerCode: 'sandbox', name: 'Sandbox', countryId: country.id, kind: 'gateway', environment: 'test', secretRef: 'PAY_SANDBOX_TEST_SECRET' },
   });
@@ -249,6 +249,9 @@ describe('bank transfer with proof (clauses 33, 46)', () => {
     const o = await order(c, serviceId);
     const p = await startPayment(c.token, o.id, { model: 'platform', method: 'bank_transfer', purpose: 'upfront', reportedAmount: '5000' });
     expect(p.body).toMatchObject({ status: 'awaiting_verification', reportedAmount: '5000.0000', verifiedAmount: null });
+    // The customer is told where to transfer, and sees nothing else about the account.
+    expect(p.body.instructions).toEqual({ ar: 'حوّل إلى الآيبان SA00 0000', en: 'Transfer to IBAN SA00 0000' });
+    expect(JSON.stringify(p.body)).not.toContain('ops only');
 
     const approve = (token: string, verifiedAmount?: string) => api(ctx, 'POST', `/v1/admin/payments/${p.body.id}/review`, { token, body: { decision: 'approve', note: 'Matched bank statement', ...(verifiedAmount ? { verifiedAmount } : {}) } });
     expect((await approve(finance.token)).body.error.code).toBe('PROOF_REQUIRED');

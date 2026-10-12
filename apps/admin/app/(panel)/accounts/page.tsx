@@ -27,7 +27,9 @@ export default function Accounts() {
             { value: 'wallet', label: { ar: 'محفظة إلكترونية', en: 'Wallet' } }, { value: 'gateway', label: { ar: 'ذمة بوابة دفع', en: 'Gateway receivable' } }] },
           { name: 'suffix', label: { ar: 'لاحقة الرمز', en: 'Code suffix' }, required: true, help: { ar: 'مثل 01 ← 1200-01', en: 'e.g. 01 → 1200-01' } },
           { name: 'name', label: { ar: 'الاسم', en: 'Name' }, type: 'i18n', required: true },
-          { name: 'details', label: { ar: 'تفاصيل (JSON، بدون أسرار)', en: 'Details (JSON, no secrets)' }, type: 'json', defaultValue: {} },
+          { name: 'details', label: { ar: 'تفاصيل (JSON، بدون أسرار)', en: 'Details (JSON, no secrets)' }, type: 'json',
+            defaultValue: { iban: '', paymentInstructions: { ar: '', en: '' } },
+            help: { ar: 'paymentInstructions فقط يظهر للعميل عند الدفع بالتحويل (مثل الآيبان واسم المستفيد). باقي الحقول داخلية.', en: 'Only paymentInstructions is shown to customers paying by transfer (e.g. IBAN and beneficiary). Other fields stay internal.' } },
         ]}
         run={(api, v) => api.post('/v1/admin/accounts', v)} />
     )}>

@@ -26,7 +26,9 @@ const PAYMENT_COLUMNS = `p.id, p.number, p.order_id AS "orderId", p.model, p.met
   p.verified_at AS "verifiedAt", p.succeeded_at AS "succeededAt", p.created_at AS "createdAt",
   coalesce((SELECT json_agg(json_build_object('bookingId', a.booking_id, 'amount', a.amount, 'verifiedAmount', a.verified_amount))
               FROM payment_allocations a WHERE a.payment_id = p.id), '[]') AS allocations,
-  (SELECT count(*)::int FROM payment_proofs pp WHERE pp.payment_id = p.id) AS "proofCount"`;
+  (SELECT count(*)::int FROM payment_proofs pp WHERE pp.payment_id = p.id) AS "proofCount",
+  -- Where to send a manual payment: only the receiving fund's customer-facing instructions, never its other details.
+  (SELECT a.details->'paymentInstructions' FROM ledger_accounts a WHERE a.id = p.account_id AND p.method IN ('bank_transfer', 'wallet', 'cash')) AS instructions`;
 
 export async function financeRoutes(app: App, deps: Deps) {
   const { db, config } = deps;

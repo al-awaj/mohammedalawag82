@@ -65,3 +65,10 @@ export function localized(v: unknown, lang: Lang): string {
 }
 
 export const dirOf = (lang: Lang) => (lang === 'ar' ? 'rtl' : 'ltr');
+
+export function formatTime(value: string | Date | null | undefined, lang: Lang, timeZone?: string): string {
+  if (!value) return '—';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return new Intl.DateTimeFormat(locale(lang), { hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone } : {}) }).format(d);
+}
