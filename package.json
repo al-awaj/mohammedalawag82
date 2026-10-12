@@ -1,10 +1,21 @@
 {
   "name": "events-platform",
   "private": true,
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "e2e"
+  ],
   "scripts": {
     "test": "npm --workspace apps/api test",
-    "typecheck": "npm --workspace apps/api run typecheck"
+    "typecheck": "npm --workspaces --if-present run typecheck",
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:admin": "npm --workspace apps/admin run dev",
+    "dev:provider": "npm --workspace apps/provider run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "test:e2e": "npm --workspace e2e test"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }

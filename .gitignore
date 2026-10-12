@@ -4,3 +4,8 @@ storage/
 .test-storage/
 *.log
 dist/
+.e2e-storage/
+.next/
+*.tsbuildinfo
+test-results/
+playwright-report/

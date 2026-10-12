@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { App, Deps } from '../../deps.js';
 import { actorOf, can, countryScope, requireKind, requirePermission, requireUser } from '../../auth/guard.js';
+import { audit } from '../../lib/audit.js';
 import { badRequest, notFound } from '../../lib/errors.js';
 import { emailSchema, idParams, paginationQuery, phoneSchema, reasonSchema } from '../common.js';
 import { ProviderApplicationService, STAFF_TRANSITIONS, type StaffAction } from './service.js';
@@ -136,6 +137,23 @@ export async function providerRoutes(app: App, deps: Deps) {
     const country = (await db.query<{ country_id: string }>('SELECT country_id FROM provider_applications WHERE id = $1', [req.params.id])).rows[0];
     if (!country || !can(user, 'provider_applications.view', country.country_id)) throw notFound();
     return loadApplication(req.params.id, can(user, 'providers.view_sensitive', country.country_id));
+  });
+
+  /** Supporting documents: the applicant, or staff reviewing applications in that country (each staff view is audited). */
+  app.get('/provider-applications/:id/documents/:docId', {
+    onRequest: deps.authenticate,
+    schema: { tags: ['provider-onboarding'], security: [{ bearer: [] }], params: z.object({ id: z.uuid(), docId: z.uuid() }) },
+  }, async (req, reply) => {
+    const user = requireUser(req);
+    const d = (await db.query<{ file_key: string; mime_type: string; original_name: string; user_id: string; country_id: string }>(
+      `SELECT d.file_key, d.mime_type, d.original_name, a.user_id, a.country_id FROM provider_application_documents d
+         JOIN provider_applications a ON a.id = d.application_id WHERE d.id = $1 AND a.id = $2`, [req.params.docId, req.params.id])).rows[0];
+    if (!d) throw notFound();
+    const staff = user.kind === 'staff' && can(user, 'provider_applications.view', d.country_id);
+    if (!staff && d.user_id !== user.id) throw notFound();
+    if (staff) await audit(db, actorOf(req), { action: 'provider_application.document_viewed', entityType: 'provider_application', entityId: req.params.id, after: { documentId: req.params.docId } });
+    const f = await deps.storage.open(d.file_key);
+    return reply.header('cache-control', 'private, no-store').header('content-disposition', `inline; filename="${encodeURIComponent(d.original_name)}"`).type(d.mime_type).send(f.stream);
   });
 
   app.post('/admin/provider-applications/:id/actions', {

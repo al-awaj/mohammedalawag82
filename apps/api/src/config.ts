@@ -14,6 +14,9 @@ const schema = z.object({
   MAX_VIDEO_BYTES: z.coerce.number().int().positive().default(100 * 1024 * 1024),
   LOGIN_MAX_FAILURES: z.coerce.number().int().positive().default(5),
   LOGIN_LOCK_MINUTES: z.coerce.number().int().positive().default(15),
+  // Which reverse proxies may set X-Forwarded-For (client IP for rate limits and the audit log):
+  // a hop count ("1"), or addresses/CIDRs ("loopback", "10.0.0.0/8,127.0.0.1"). Empty = trust none.
+  TRUST_PROXY: z.string().default('loopback').transform((v) => (v === '' ? false : /^\d+$/.test(v) ? Number(v) : v.split(',').map((x) => x.trim()))),
   RATE_LIMIT_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
 });
 

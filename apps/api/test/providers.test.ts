@@ -78,6 +78,19 @@ describe('provider registration (test 2)', () => {
     expect((await api(ctx, 'POST', `/v1/provider-applications/${id}/submit`, { token: p.token, body: { acceptTerms: true } })).status).toBe(204);
     const mine = await api(ctx, 'GET', '/v1/provider-applications/mine', { token: p.token });
     expect(mine.body[0]).toMatchObject({ status: 'submitted', documents: [{ docType: 'identity' }, { docType: 'commercial_registration' }] });
+    // The applicant and reviewing staff of that country can open the documents; others cannot.
+    const docId = mine.body[0].documents[0].id;
+    const docUrl = `/v1/provider-applications/${id}/documents/${docId}`;
+    const own = await ctx.app.inject({ method: 'GET', url: docUrl, headers: { authorization: `Bearer ${p.token}` } });
+    expect(own.statusCode).toBe(200);
+    expect(own.headers['content-type']).toContain('application/pdf');
+    expect((await ctx.app.inject({ method: 'GET', url: docUrl, headers: { authorization: `Bearer ${supervisor.token}` } })).statusCode).toBe(200);
+    const audited = await ctx.db.query(`SELECT 1 FROM audit_log WHERE action = 'provider_application.document_viewed' AND entity_id = $1`, [id]);
+    expect(audited.rowCount).toBe(1);
+    const outsider = await createStaff(ctx, [{ code: 'services_supervisor', countryId: otherCountry.id }]);
+    expect((await ctx.app.inject({ method: 'GET', url: docUrl, headers: { authorization: `Bearer ${outsider.token}` } })).statusCode).toBe(404);
+    const stranger = await register(ctx, country.code, 'provider');
+    expect((await ctx.app.inject({ method: 'GET', url: docUrl, headers: { authorization: `Bearer ${stranger.token}` } })).statusCode).toBe(404);
     // Cannot edit once submitted.
     expect((await api(ctx, 'PATCH', `/v1/provider-applications/${id}`, { token: p.token, body: { city: 'Jeddah' } })).status).toBe(409);
     // Only one open application.

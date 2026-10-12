@@ -60,9 +60,11 @@ export async function reconciliationRoutes(app: App, deps: Deps) {
     ...staff('finance.reconcile'),
     schema: { tags: ['reconciliation'], security: sec, params: idParams, querystring: z.object({ status: z.enum(STATUSES).optional(), unresolved: z.stringbool().optional() }) },
   }, async (req) => {
-    const run = (await db.query<{ country_id: string }>('SELECT * FROM reconciliation_runs WHERE id = $1', [req.params.id])).rows[0];
+    const run = (await db.query<{ countryId: string }>(
+      `SELECT id, country_id AS "countryId", integration_id AS "integrationId", account_id AS "accountId", period_from AS "periodFrom", period_to AS "periodTo",
+              source_name AS "sourceName", summary, created_by AS "createdBy", created_at AS "createdAt" FROM reconciliation_runs WHERE id = $1`, [req.params.id])).rows[0];
     if (!run) throw notFound();
-    assertCan(requireUser(req), 'finance.reconcile', run.country_id);
+    assertCan(requireUser(req), 'finance.reconcile', run.countryId);
     const items = (await db.query(
       `SELECT i.id, i.status, i.kind, i.external_ref AS "externalRef", p.number AS "paymentNumber", r.number AS "refundNumber",
               i.statement_amount AS "statementAmount", i.platform_amount AS "platformAmount", i.currency_code AS currency, i.note,

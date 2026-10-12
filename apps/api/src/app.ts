@@ -43,7 +43,7 @@ import { reconciliationRoutes } from './modules/reconciliation/routes.js';
 export async function buildApp(config: Config, db: Db) {
   const app = Fastify({
     logger: config.NODE_ENV === 'test' ? false : { level: 'info', redact: ['req.headers.authorization'] },
-    trustProxy: true,
+    trustProxy: typeof config.TRUST_PROXY === 'number' ? ((_addr: string, hop: number) => hop < (config.TRUST_PROXY as number)) : config.TRUST_PROXY,
     bodyLimit: 1024 * 1024,
   }).withTypeProvider<ZodTypeProvider>();
 

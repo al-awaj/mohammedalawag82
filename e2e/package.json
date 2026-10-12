@@ -1,0 +1,13 @@
+{
+  "name": "e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:apps": "npm --prefix .. run build --workspace apps/admin --workspace apps/provider --workspace apps/web --if-present",
+    "setup-db": "node --import tsx setup-db.ts",
+    "test": "npm run setup-db && playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": { "@playwright/test": "1.56.1", "@types/node": "^22.20.5", "pg": "^8.16.0", "tsx": "^4.23.15", "typescript": "5.9" }
+}
