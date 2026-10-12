@@ -1,0 +1,10 @@
+{
+  "name": "events-platform",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "test": "npm --workspace apps/api test",
+    "typecheck": "npm --workspace apps/api run typecheck"
+  },
+  "engines": { "node": ">=22" }
+}
