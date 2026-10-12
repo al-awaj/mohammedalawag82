@@ -8,6 +8,7 @@ import { enqueueMessage } from '../../lib/outbox.js';
 import { confirmAfterPayment } from '../booking/service.js';
 import { getSetting } from '../settings/registry.js';
 import { syncEarning } from './earnings.js';
+import { completeRefund, failRefund } from './refunds.js';
 import { adapterFor, type IntegrationRow } from './gateways.js';
 import { post, systemAccount } from './ledger.js';
 
@@ -303,10 +304,23 @@ export async function handleWebhook(db: Db, config: Config, integrationId: strin
     const setResult = (result: string, error: string | null = null) =>
       c.query('UPDATE provider_webhook_events SET result = $2, error = $3 WHERE id = $1', [eventRowId, result, error]);
 
+    const ctx: ActorContext = { ...systemActor, requestId: `webhook:${ev.id}` };
+    if (ev.type === 'refund.succeeded' || ev.type === 'refund.failed') {
+      const r = (await c.query<{ id: string; amount: string; status: string }>(
+        `SELECT r.id, r.amount, r.status FROM refunds r JOIN payments p ON p.id = r.payment_id WHERE p.integration_id = $1 AND r.external_ref = $2`,
+        [i.id, ev.externalRef])).rows[0];
+      if (!r) { await setResult('ignored', 'unknown refund reference'); return { result: 'ignored' }; }
+      if (ev.type === 'refund.succeeded' && toUnits(ev.amount) !== toUnits(r.amount)) {
+        await setResult('error', 'refund amount mismatch: left for review');
+        return { result: 'review' };
+      }
+      const res = ev.type === 'refund.succeeded' ? await completeRefund(c, r.id, ctx) : await failRefund(c, r.id, ev.failureReason ?? 'refund declined by provider', ctx);
+      if (!res.changed) await setResult('duplicate', `refund already ${r.status}`);
+      return { result: res.changed ? 'processed' : 'duplicate' };
+    }
     const p = (await c.query<{ id: string; amount: string; currency_code: string; status: string }>(
       'SELECT id, amount, currency_code, status FROM payments WHERE integration_id = $1 AND external_ref = $2', [i.id, ev.externalRef])).rows[0];
     if (!p) { await setResult('ignored', 'unknown payment reference'); return { result: 'ignored' }; }
-    const ctx: ActorContext = { ...systemActor, requestId: `webhook:${ev.id}` };
 
     if (ev.type === 'payment.succeeded') {
       if (toUnits(ev.amount) !== toUnits(p.amount) || ev.currency !== p.currency_code.trim()) {

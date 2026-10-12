@@ -9,7 +9,7 @@ import { currentTerms } from '../auth/service.js';
 import { getSetting } from '../settings/registry.js';
 import { quote, type ItemInput, type Quote } from './pricing.js';
 import { computeCommission } from '../finance/commission.js';
-import { onBookingCompleted, onBookingNoShow } from '../finance/earnings.js';
+import { onBookingCompleted } from '../finance/earnings.js';
 
 export type BookingStatus =
   | 'pending_provider_approval' | 'awaiting_payment' | 'confirmed' | 'in_progress' | 'completed' | 'no_show'
@@ -32,7 +32,7 @@ export async function lockBooking(c: Executor, id: string): Promise<BookingRow> 
   return b;
 }
 
-async function notify(c: Executor, userId: string, templateKey: string, payload: Record<string, unknown>) {
+export async function notify(c: Executor, userId: string, templateKey: string, payload: Record<string, unknown>) {
   const u = (await c.query<{ phone: string | null; email: string | null; preferred_language: string }>(
     'SELECT phone, email, preferred_language FROM users WHERE id = $1', [userId])).rows[0];
   if (!u) return;
@@ -71,7 +71,7 @@ export async function transition(c: Executor, b: BookingRow, to: BookingStatus, 
   b.status = to;
 }
 
-async function freeCalendar(c: Executor, b: BookingRow, actorId: string | null, reason: string) {
+export async function freeCalendar(c: Executor, b: BookingRow, actorId: string | null, reason: string) {
   if (!b.calendar_block_id) return;
   const active = await c.query(`SELECT 1 FROM calendar_blocks WHERE id = $1 AND status = 'active'`, [b.calendar_block_id]);
   if (active.rowCount) await releaseBlock(c, b.calendar_block_id, actorId, reason);
@@ -373,7 +373,8 @@ export async function cancelUnpaid(db: Db, bookingId: string, by: 'customer' | '
   });
 }
 
-export async function providerExecution(db: Db, providerId: string, bookingId: string, action: 'start' | 'complete' | 'no_show', ctx: ActorContext) {
+/** Start and completion. No-shows go through the cancellation policy (booking/cancellation.ts). */
+export async function providerExecution(db: Db, providerId: string, bookingId: string, action: 'start' | 'complete', ctx: ActorContext) {
   return withTx(db, async (c) => {
     const b = await lockBooking(c, bookingId);
     if (b.provider_id !== providerId) throw notFound();
@@ -381,7 +382,6 @@ export async function providerExecution(db: Db, providerId: string, bookingId: s
     const rules = {
       start: { from: ['confirmed'], to: 'in_progress', when: started.started },
       complete: { from: ['confirmed', 'in_progress'], to: 'completed', when: started.started },
-      no_show: { from: ['confirmed'], to: 'no_show', when: started.started },
     }[action] as { from: BookingStatus[]; to: BookingStatus; when: boolean };
     if (!rules.from.includes(b.status)) throw conflict('INVALID_STATUS_TRANSITION', { from: b.status });
     // A service cannot be marked done (which later unlocks the provider's earnings) before it has started.
@@ -391,7 +391,6 @@ export async function providerExecution(db: Db, providerId: string, bookingId: s
       await onBookingCompleted(c, b.id, ctx);
       await notify(c, b.customer_id, 'booking.completed', { bookingId: b.id, number: b.number });
     }
-    if (rules.to === 'no_show') await onBookingNoShow(c, b.id, ctx);
     return { status: b.status };
   });
 }

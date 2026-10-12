@@ -57,6 +57,12 @@ export const SETTINGS = {
     scopes: ['global', 'country'],
     description: { ar: 'تفعيل الدفع المباشر لصاحب الخدمة', en: 'Enable direct payment to the provider' },
   }),
+  'refunds.provider_cancellation_percent': def({
+    schema: z.number().min(0).max(100),
+    default: 100,
+    scopes: ['global', 'country'],
+    description: { ar: 'نسبة ما يُسترد للعميل من المدفوع عند إلغاء صاحب الخدمة للحجز', en: 'Share of the paid amount refunded to the customer when the provider cancels' },
+  }),
   'earnings.require_review': def({
     schema: z.boolean(),
     default: false,

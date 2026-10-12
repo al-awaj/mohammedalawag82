@@ -15,3 +15,6 @@ export const paginationQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
+
+/** Body schema for endpoints where sending no body at all is valid (Fastify passes null then). */
+export const optionalBody = <T extends z.ZodType>(schema: T) => z.preprocess((v) => v ?? {}, schema);

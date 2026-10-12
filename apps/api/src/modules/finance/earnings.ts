@@ -1,7 +1,7 @@
 import type { Executor } from '../../db/pool.js';
 import { audit, type ActorContext } from '../../lib/audit.js';
 import { conflict, notFound } from '../../lib/errors.js';
-import { fromUnits, toUnits } from '../../lib/money.js';
+import { fromUnits, min, percentOf, roundToMinor, toUnits } from '../../lib/money.js';
 import { getSetting } from '../settings/registry.js';
 import { post, systemAccount } from './ledger.js';
 
@@ -20,6 +20,13 @@ export async function collected(c: Executor, bookingId: string) {
        FROM payment_allocations a JOIN payments p ON p.id = a.payment_id
       WHERE a.booking_id = $1 AND p.status = 'succeeded'`, [bookingId])).rows[0]!;
   return r;
+}
+
+/** What was already paid out to the provider early for a booking (interim settlements, clause 44). */
+export async function interimPaid(c: Executor, bookingId: string): Promise<string> {
+  return (await c.query<{ v: string }>(
+    `SELECT coalesce(sum(i.amount), 0)::numeric(20,4)::text AS v FROM settlement_items i JOIN settlements s ON s.id = i.settlement_id
+      WHERE i.booking_id = $1 AND s.kind = 'interim' AND i.status = 'paid'`, [bookingId])).rows[0]!.v;
 }
 
 /** Creates (once) and refreshes the earning record of a confirmed booking. */
@@ -53,25 +60,74 @@ export async function onBookingCompleted(c: Executor, bookingId: string, ctx: Ac
   const review = await getSetting(c, 'earnings.require_review', e.country_id);
   const cur = e.currency_code.trim();
   const payable = await systemAccount(c, e.country_id, cur, review ? 'provider_payable_not_due' : 'provider_payable_due');
+  // Amounts paid out early (interim) already left customer advances and reduce what is still owed.
+  const early = toUnits(await interimPaid(c, bookingId));
   await post(c, {
     countryId: e.country_id, description: `Booking completed: recognise commission and provider share`, sourceType: 'booking_completion', sourceId: bookingId,
     idempotencyKey: `booking_completion:${bookingId}`, createdBy: ctx.actorId,
     lines: [
-      { accountId: await systemAccount(c, e.country_id, cur, 'customer_advances'), debit: e.collected_by_platform, currency: cur, bookingId, providerId: e.provider_id },
+      { accountId: await systemAccount(c, e.country_id, cur, 'customer_advances'), debit: fromUnits(toUnits(e.collected_by_platform) - early), currency: cur, bookingId, providerId: e.provider_id },
       { accountId: await systemAccount(c, e.country_id, cur, 'commission_revenue'), credit: e.commission_amount, currency: cur, bookingId, providerId: e.provider_id },
       // Net may be negative when the provider was paid directly: then the provider owes the commission.
-      { accountId: payable, credit: e.net_amount, currency: cur, bookingId, providerId: e.provider_id },
+      { accountId: payable, credit: fromUnits(toUnits(e.net_amount) - early), currency: cur, bookingId, providerId: e.provider_id },
     ],
   });
   await setStatus(c, e.id, e.status, review ? 'under_review' : 'due', ctx.actorId, null, review ? '' : ', due_at = now()');
   await audit(c, ctx, { action: 'earning.recognised', entityType: 'provider_earning', entityId: e.id, after: { status: review ? 'under_review' : 'due', net: e.net_amount, commission: e.commission_amount } });
 }
 
-/** No-show outcomes need a human decision before any money moves. */
-export async function onBookingNoShow(c: Executor, bookingId: string, ctx: ActorContext) {
-  await syncEarning(c, bookingId);
-  const e = (await c.query<{ id: string; status: string }>('SELECT id, status FROM provider_earnings WHERE booking_id = $1 FOR UPDATE', [bookingId])).rows[0]!;
-  if (e.status === 'not_due') await setStatus(c, e.id, e.status, 'under_review', ctx.actorId, 'customer no-show: needs a financial decision');
+const CLOSABLE = ['no_show', 'rejected', 'expired', 'cancelled_by_customer', 'cancelled_by_provider', 'cancelled_by_admin'];
+
+/**
+ * Settles the money of a booking that ended without the service being delivered (cancelled, no-show,
+ * rejected, expired) once no refund is still open. What the platform keeps after refunds (the retained
+ * amount under the cancellation policy) is treated like delivered revenue: the booking's own commission
+ * rule is applied to it and the rest becomes due to the provider. Interim payouts reduce what is owed;
+ * if they exceed it, the provider owes the difference.
+ */
+export async function closeBookingFinancials(c: Executor, bookingId: string, ctx: ActorContext) {
+  const b = (await c.query<{ status: string; provider_id: string; country_id: string; currency_code: string }>(
+    'SELECT status, provider_id, country_id, currency_code FROM bookings WHERE id = $1', [bookingId])).rows[0]!;
+  if (!CLOSABLE.includes(b.status)) return;
+  const open = await c.query(`SELECT 1 FROM refunds WHERE booking_id = $1 AND status IN ('requested', 'approved', 'processing')`, [bookingId]);
+  if (open.rowCount) return;
+  const already = await c.query('SELECT 1 FROM journal_entries WHERE idempotency_key = $1', [`booking_closure:${bookingId}`]);
+  if (already.rowCount) return;
+
+  const col = await collected(c, bookingId);
+  const refunded = toUnits((await c.query<{ v: string }>(`SELECT coalesce(sum(amount), 0)::text AS v FROM refunds WHERE booking_id = $1 AND status = 'completed'`, [bookingId])).rows[0]!.v);
+  const retained = toUnits(col.platform) - refunded;
+  const early = toUnits(await interimPaid(c, bookingId));
+  if (retained === 0n && early === 0n && toUnits(col.direct) === 0n) {
+    // Nothing was kept or paid out: no earning to create.
+    await c.query(`UPDATE provider_earnings SET status = 'settled', status_reason = 'nothing payable', net_amount = 0, commission_amount = 0 WHERE booking_id = $1 AND status = 'not_due'`, [bookingId]);
+    return;
+  }
+  const cur = b.currency_code.trim();
+  const minor = (await c.query<{ m: number }>('SELECT minor_units AS m FROM currencies WHERE code = $1', [cur])).rows[0]!.m;
+  const rule = (await c.query<{ rate_type: string | null; rate_value: string | null }>('SELECT rate_type, rate_value FROM booking_commissions WHERE booking_id = $1', [bookingId])).rows[0];
+  const base = retained + toUnits(col.direct);
+  const commission = !rule?.rate_type || base <= 0n ? 0n
+    : rule.rate_type === 'percent' ? roundToMinor(percentOf(base, rule.rate_value!), minor)
+    : min(roundToMinor(toUnits(rule.rate_value!), minor), base);
+  const net = retained - commission;
+
+  await syncEarning(c, bookingId); // creates the earning row if the booking never got one
+  const earning = (await c.query<{ id: string; status: string }>('SELECT id, status FROM provider_earnings WHERE booking_id = $1 FOR UPDATE', [bookingId])).rows[0]!;
+  await post(c, {
+    countryId: b.country_id, description: 'Booking closed without service: retained amount, commission and provider share', sourceType: 'booking_closure',
+    sourceId: bookingId, idempotencyKey: `booking_closure:${bookingId}`, createdBy: ctx.actorId,
+    lines: [
+      { accountId: await systemAccount(c, b.country_id, cur, 'customer_advances'), debit: fromUnits(retained - early), currency: cur, bookingId, providerId: b.provider_id },
+      { accountId: await systemAccount(c, b.country_id, cur, 'commission_revenue'), credit: fromUnits(commission), currency: cur, bookingId, providerId: b.provider_id },
+      { accountId: await systemAccount(c, b.country_id, cur, 'provider_payable_due'), credit: fromUnits(net - early), currency: cur, bookingId, providerId: b.provider_id },
+    ],
+  });
+  const remaining = net - early;
+  await c.query('UPDATE provider_earnings SET commission_amount = $2, net_amount = $3 WHERE id = $1', [earning.id, fromUnits(commission), fromUnits(net)]);
+  await setStatus(c, earning.id, earning.status, remaining === 0n ? 'settled' : 'due', ctx.actorId,
+    remaining === 0n ? 'closed: nothing left to settle' : `closed after ${b.status}`, remaining === 0n ? '' : ', due_at = now()');
+  await audit(c, ctx, { action: 'booking.financials_closed', entityType: 'booking', entityId: bookingId, after: { retained: fromUnits(retained), commission: fromUnits(commission), net: fromUnits(net), interimPaid: fromUnits(early) } });
 }
 
 /** Staff approves a completed booking's earning under review: not-due payable becomes due. */

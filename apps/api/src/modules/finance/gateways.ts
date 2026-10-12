@@ -30,6 +30,8 @@ export interface GatewayAdapter {
   readonly code: string;
   createCheckout(i: IntegrationRow, secret: string, p: { paymentId: string; number: string; amount: string; currency: string }): Promise<CheckoutSession>;
   parseWebhook(i: IntegrationRow, secret: string, rawBody: Buffer, headers: Record<string, string | string[] | undefined>): { valid: boolean; event: GatewayEvent | null };
+  /** Asks the provider to return money to the original payment; completion arrives by signed notification. */
+  refund(i: IntegrationRow, secret: string, r: { paymentRef: string; refundId: string; amount: string; currency: string }): Promise<{ externalRef: string }>;
   test(i: IntegrationRow, secret: string): Promise<{ ok: boolean; message: string }>;
 }
 
@@ -54,6 +56,9 @@ const sandbox: GatewayAdapter = {
       valid: true,
       event: { id: body.id, type: body.type, externalRef: body.data.reference, amount: body.data.amount, currency: body.data.currency, fee: body.data.fee ?? '0', failureReason: body.data.reason ?? null },
     };
+  },
+  async refund() {
+    return { externalRef: `sbr_${randomBytes(12).toString('hex')}` };
   },
   async test(_i, secret) {
     return secret.length >= 16 ? { ok: true, message: 'sandbox secret present' } : { ok: false, message: 'secret shorter than 16 characters' };

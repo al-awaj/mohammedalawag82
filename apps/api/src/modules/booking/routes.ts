@@ -9,7 +9,8 @@ import { idParams, paginationQuery, reasonSchema } from '../common.js';
 import { providerOf } from '../catalog/shared.js';
 import { identityVisible } from '../catalog/queries.js';
 import { itemInput, quote } from './pricing.js';
-import { addToCart, cancelUnpaid, checkout, OCCUPYING, providerDecision, providerExecution, viewCart } from './service.js';
+import { addToCart, checkout, OCCUPYING, providerDecision, providerExecution, viewCart } from './service.js';
+import { cancelBooking, decideCancellationRequest, markNoShow, quoteCancellation } from './cancellation.js';
 
 const sec = [{ bearer: [] }];
 const STATUSES = ['pending_provider_approval', 'awaiting_payment', 'confirmed', 'in_progress', 'completed', 'no_show', 'rejected', 'expired',
@@ -261,8 +262,21 @@ export async function bookingRoutes(app: App, deps: Deps) {
     return { ...b, history: await bookingHistory(db, row.id) };
   });
 
+  app.get('/bookings/:id/cancellation-preview', { ...customer, schema: { tags: ['bookings'], security: sec, params: idParams } }, async (req) => {
+    const own = await db.query('SELECT 1 FROM bookings WHERE id = $1 AND customer_id = $2', [req.params.id, requireUser(req).id]);
+    if (!own.rowCount) throw notFound();
+    // Shown before confirming, so the customer sees the policy outcome first (clause 49).
+    return quoteCancellation(db, req.params.id, 'customer');
+  });
+
   app.post('/bookings/:id/cancel', { ...customer, schema: { tags: ['bookings'], security: sec, params: idParams, body: z.object({ reason: reasonSchema }) } },
-    async (req) => cancelUnpaid(db, req.params.id, 'customer', req.body.reason, actorOf(req), { customerId: requireUser(req).id }));
+    async (req) => cancelBooking(db, req.params.id, 'customer', req.body.reason, actorOf(req), { customerId: requireUser(req).id }));
+
+  app.get('/bookings/:id/refunds', { ...customer, schema: { tags: ['bookings'], security: sec, params: idParams } }, async (req) =>
+    (await db.query(
+      `SELECT r.id, r.number, r.amount, r.currency_code AS currency, r.status, r.source, r.reason, r.created_at AS "createdAt", r.executed_at AS "completedAt"
+         FROM refunds r JOIN bookings b ON b.id = r.booking_id WHERE r.booking_id = $1 AND b.customer_id = $2 ORDER BY r.created_at`,
+      [req.params.id, requireUser(req).id])).rows);
 
   // ---------------- Provider panel ----------------
   app.get('/provider/bookings', {
@@ -294,12 +308,23 @@ export async function bookingRoutes(app: App, deps: Deps) {
     return providerDecision(db, p.id, req.params.id, 'reject', req.body.reason, actorOf(req));
   });
 
-  for (const action of ['start', 'complete', 'no_show'] as const) {
-    app.post(`/provider/bookings/:id/${action.replace('_', '-')}`, { ...provider, schema: { tags: ['provider-panel'], security: sec, params: idParams } }, async (req) => {
+  for (const action of ['start', 'complete'] as const) {
+    app.post(`/provider/bookings/:id/${action}`, { ...provider, schema: { tags: ['provider-panel'], security: sec, params: idParams } }, async (req) => {
       const p = await providerOf(db, req, { forWrite: true });
       return providerExecution(db, p.id, (req.params as { id: string }).id, action, actorOf(req));
     });
   }
+
+  app.post('/provider/bookings/:id/no-show', { ...provider, schema: { tags: ['provider-panel'], security: sec, params: idParams } }, async (req) => {
+    const p = await providerOf(db, req, { forWrite: true });
+    return markNoShow(db, p.id, req.params.id, actorOf(req));
+  });
+
+  app.post('/provider/bookings/:id/cancel', { ...provider, schema: { tags: ['provider-panel'], security: sec, params: idParams, body: z.object({ reason: reasonSchema }) } }, async (req) => {
+    // Allowed even while suspended: cancelling protects the customer and refunds them.
+    const p = await providerOf(db, req, { forWrite: false });
+    return cancelBooking(db, req.params.id, 'provider', req.body.reason, actorOf(req), { providerId: p.id });
+  });
 
   // ---------------- Admin ----------------
   app.get('/admin/bookings', {
@@ -341,11 +366,37 @@ export async function bookingRoutes(app: App, deps: Deps) {
 
   app.post('/admin/bookings/:id/cancel', {
     onRequest: deps.authenticate, preValidation: requirePermission('bookings.cancel'),
-    schema: { tags: ['admin:bookings'], security: sec, params: idParams, body: z.object({ reason: reasonSchema }) },
+    schema: { tags: ['admin:bookings'], security: sec, params: idParams, body: z.object({ reason: reasonSchema, refundAmount: z.string().regex(/^\d{1,16}(\.\d{1,4})?$/).optional() }) },
   }, async (req) => {
     const country = (await db.query<{ country_id: string }>('SELECT country_id FROM bookings WHERE id = $1', [req.params.id])).rows[0];
     if (!country) throw notFound();
     assertCan(requireUser(req), 'bookings.cancel', country.country_id);
-    return cancelUnpaid(db, req.params.id, 'admin', req.body.reason, actorOf(req));
+    return cancelBooking(db, req.params.id, 'admin', req.body.reason, actorOf(req), { refundAmount: req.body.refundAmount });
+  });
+
+  app.get('/admin/cancellation-requests', {
+    onRequest: deps.authenticate, preValidation: requirePermission('bookings.cancel'),
+    schema: { tags: ['admin:bookings'], security: sec, querystring: paginationQuery.extend({ status: z.enum(['pending', 'approved', 'rejected']).default('pending') }) },
+  }, async (req) => {
+    const scope = countryScope(requireUser(req), 'bookings.cancel');
+    return (await db.query(
+      `SELECT r.id, r.booking_id AS "bookingId", b.number AS "bookingNumber", b.status AS "bookingStatus", r.reason, r.computed_refund AS "computedRefund",
+              r.status, r.approved_refund AS "approvedRefund", r.decision_reason AS "decisionReason", r.created_at AS "createdAt", b.currency_code AS currency
+         FROM cancellation_requests r JOIN bookings b ON b.id = r.booking_id
+        WHERE ($1::uuid[] IS NULL OR b.country_id = ANY($1)) AND r.status = $2 ORDER BY r.created_at LIMIT $3 OFFSET $4`,
+      [scope, req.query.status, req.query.limit, req.query.offset])).rows;
+  });
+
+  app.post('/admin/cancellation-requests/:id/decide', {
+    onRequest: deps.authenticate, preValidation: requirePermission('bookings.cancel'),
+    schema: {
+      tags: ['admin:bookings'], security: sec, params: idParams,
+      body: z.object({ decision: z.enum(['approve', 'reject']), refundAmount: z.string().regex(/^\d{1,16}(\.\d{1,4})?$/).optional(), reason: reasonSchema }),
+    },
+  }, async (req) => {
+    const r = (await db.query<{ country_id: string }>('SELECT b.country_id FROM cancellation_requests r JOIN bookings b ON b.id = r.booking_id WHERE r.id = $1', [req.params.id])).rows[0];
+    if (!r) throw notFound();
+    assertCan(requireUser(req), 'bookings.cancel', r.country_id);
+    return decideCancellationRequest(db, req.params.id, req.body.decision, req.body.refundAmount, req.body.reason, actorOf(req));
   });
 }

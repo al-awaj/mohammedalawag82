@@ -4,7 +4,7 @@ import { actorOf, requireUser } from '../../auth/guard.js';
 import { audit } from '../../lib/audit.js';
 import { badRequest } from '../../lib/errors.js';
 import { withTx } from '../../db/pool.js';
-import { emailSchema, langSchema, passwordSchema, phoneSchema } from '../common.js';
+import { emailSchema, langSchema, optionalBody, passwordSchema, phoneSchema } from '../common.js';
 import { AuthService } from './service.js';
 
 const sessionSchema = z.object({ accessToken: z.string(), refreshToken: z.string(), expiresIn: z.number() });
@@ -45,7 +45,7 @@ export async function authRoutes(app: App, deps: Deps) {
 
   app.post('/auth/logout', {
     ...auth,
-    schema: { tags: ['auth'], security: [{ bearer: [] }], body: z.object({ refreshToken: z.string().optional() }).default({}) },
+    schema: { tags: ['auth'], security: [{ bearer: [] }], body: optionalBody(z.object({ refreshToken: z.string().optional() })) },
   }, async (req, reply) => {
     await svc.logout(requireUser(req).id, req.body.refreshToken, actorOf(req));
     return reply.status(204).send();

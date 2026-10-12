@@ -6,12 +6,14 @@ import { audit } from '../../lib/audit.js';
 import { badRequest, conflict, mapUniqueViolation, notFound } from '../../lib/errors.js';
 import { fromUnits, toUnits } from '../../lib/money.js';
 import { DOCUMENT_TYPES } from '../../lib/storage.js';
-import { i18nTextSchema, idParams, paginationQuery, reasonSchema } from '../common.js';
+import { i18nTextSchema, idParams, optionalBody, paginationQuery, reasonSchema } from '../common.js';
 import { providerOf } from '../catalog/shared.js';
 import { approveEarningReview } from './earnings.js';
 import { adapterFor, SUPPORTED_PROVIDERS, type IntegrationRow } from './gateways.js';
 import { CHART, NATURAL_SIGN_SQL, type AccountKind } from './ledger.js';
 import { cancelPayment, createPayment, handleWebhook, paymentOptions, reviewPayment } from './payments.js';
+import { approveRefund, executeRefund, failRefund, refundableFor, rejectRefund, requestRefunds } from './refunds.js';
+import { approveSettlement, closeSettlementUnpaid, createSettlement, eligibleEarnings, markSettlementPaid } from './settlements.js';
 
 const sec = [{ bearer: [] }];
 const money = z.string().regex(/^\d{1,16}(\.\d{1,4})?$/);
@@ -484,4 +486,156 @@ export async function financeRoutes(app: App, deps: Deps) {
     await approveEarningReview(c, req.params.id, actorOf(req), req.body.note);
     return { status: 'due' };
   }));
+
+  // =============== Admin: refunds (clause 50) ===============
+  const REFUND_COLUMNS = `r.id, r.number, r.booking_id AS "bookingId", b.number AS "bookingNumber", r.payment_id AS "paymentId", r.amount, r.currency_code AS currency,
+    r.source, r.reason, r.method, r.status, r.external_ref AS "externalRef", r.failure_reason AS "failureReason", r.rejection_reason AS "rejectionReason",
+    r.requested_by AS "requestedBy", r.requested_by_kind AS "requestedByKind", r.reviewed_by AS "reviewedBy", r.approved_by AS "approvedBy",
+    r.approved_at AS "approvedAt", r.executed_by AS "executedBy", r.executed_at AS "executedAt", r.created_at AS "createdAt", b.country_id AS "countryId"`;
+
+  app.get('/admin/refunds', {
+    ...staff('finance.view'),
+    schema: { tags: ['admin:finance'], security: sec, querystring: paginationQuery.extend({ status: z.enum(['requested', 'approved', 'processing', 'completed', 'rejected', 'failed']).optional(), bookingId: z.uuid().optional() }) },
+  }, async (req) => {
+    const scope = countryScope(requireUser(req), 'finance.view');
+    return (await db.query(
+      `SELECT ${REFUND_COLUMNS} FROM refunds r JOIN bookings b ON b.id = r.booking_id
+        WHERE ($1::uuid[] IS NULL OR b.country_id = ANY($1)) AND ($2::text IS NULL OR r.status = $2) AND ($3::uuid IS NULL OR r.booking_id = $3)
+        ORDER BY r.created_at DESC LIMIT $4 OFFSET $5`, [scope, req.query.status ?? null, req.query.bookingId ?? null, req.query.limit, req.query.offset])).rows;
+  });
+
+  app.get('/admin/refunds/:id', { ...staff('finance.view'), schema: { tags: ['admin:finance'], security: sec, params: idParams } }, async (req) => {
+    const r = (await db.query(`SELECT ${REFUND_COLUMNS} FROM refunds r JOIN bookings b ON b.id = r.booking_id WHERE r.id = $1`, [req.params.id])).rows[0];
+    if (!r || !can(requireUser(req), 'finance.view', r.countryId)) throw notFound();
+    r.history = (await db.query(`SELECT from_status AS "from", to_status AS "to", actor_kind AS "actorKind", reason, created_at AS at FROM refund_status_events WHERE refund_id = $1 ORDER BY created_at, id`, [r.id])).rows;
+    return r;
+  });
+
+  /** Manual refund on a booking that ended (e.g. money received after the slot was lost or the booking cancelled). */
+  app.post('/admin/bookings/:id/refunds', {
+    ...staff('refunds.execute'),
+    schema: {
+      tags: ['admin:finance'], security: sec, params: idParams,
+      body: z.object({ amount: money, reason: reasonSchema, source: z.enum(['slot_unavailable', 'booking_cancelled', 'manual']).default('manual') }),
+    },
+  }, async (req, reply) => reply.status(201).send(await withTx(db, async (c) => {
+    const b = (await c.query<{ country_id: string; status: string }>('SELECT country_id, status FROM bookings WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!b) throw notFound();
+    assertCan(requireUser(req), 'refunds.execute', b.country_id);
+    // Refunds on live or completed bookings belong to the cancellation and dispute processes.
+    if (!['no_show', 'rejected', 'expired', 'cancelled_by_customer', 'cancelled_by_provider', 'cancelled_by_admin'].includes(b.status)) {
+      throw conflict('INVALID_STATUS_TRANSITION', { reason: 'manual refunds are for bookings that ended without the service' });
+    }
+    return { refundIds: await requestRefunds(c, req.params.id, req.body.amount, req.body.source, req.body.reason, actorOf(req)) };
+  })));
+
+  app.get('/admin/bookings/:id/refundable', { ...staff('finance.view'), schema: { tags: ['admin:finance'], security: sec, params: idParams } }, async (req) => {
+    const b = (await db.query<{ country_id: string }>('SELECT country_id FROM bookings WHERE id = $1', [req.params.id])).rows[0];
+    if (!b || !can(requireUser(req), 'finance.view', b.country_id)) throw notFound();
+    const r = await refundableFor(db, req.params.id);
+    return {
+      platformPaid: fromUnits(r.platformPaid), refundable: fromUnits(r.available), directPaid: fromUnits(r.directPaid),
+      payments: r.items.map((i) => ({ paymentId: i.paymentId, method: i.method, verified: fromUnits(i.verified), refunded: fromUnits(i.refunded), available: fromUnits(i.available) })),
+    };
+  });
+
+  const refundAction = (path: string, body: z.ZodType, run: (c: Parameters<Parameters<typeof withTx>[1]>[0], id: string, b: Record<string, string>, ctx: ReturnType<typeof actorOf>) => Promise<unknown>) =>
+    app.post(`/admin/refunds/:id/${path}`, { ...staff('refunds.execute'), schema: { tags: ['admin:finance'], security: sec, params: idParams, body } }, async (req) => withTx(db, async (c) => {
+      const r = (await c.query<{ country_id: string }>('SELECT b.country_id FROM refunds r JOIN bookings b ON b.id = r.booking_id WHERE r.id = $1', [(req.params as { id: string }).id])).rows[0];
+      if (!r) throw notFound();
+      assertCan(requireUser(req), 'refunds.execute', r.country_id);
+      const result = await run(c, (req.params as { id: string }).id, (req.body ?? {}) as Record<string, string>, actorOf(req));
+      return result ?? { ok: true };
+    }));
+  refundAction('approve', optionalBody(z.object({})), async (c, id, _b, ctx) => { await approveRefund(c, id, ctx); return { status: 'approved' }; });
+  refundAction('reject', z.object({ reason: reasonSchema }), async (c, id, b, ctx) => { await rejectRefund(c, id, b.reason!, ctx); return { status: 'rejected' }; });
+  refundAction('execute', optionalBody(z.object({ externalRef: z.string().trim().min(3).max(200).optional() })), (c, id, b, ctx) => executeRefund(c, config, id, b.externalRef, ctx));
+  refundAction('fail', z.object({ reason: reasonSchema }), async (c, id, b, ctx) => { await failRefund(c, id, b.reason!, ctx); return { status: 'failed' }; });
+
+  // =============== Admin: settlements (clauses 43-44) ===============
+  app.patch('/admin/providers/:id/interim-settlement', {
+    ...staff('settlements.approve'),
+    schema: {
+      tags: ['admin:finance'], security: sec, params: idParams,
+      body: z.object({ eligible: z.boolean(), maxPercent: z.number().gt(0).max(100).nullable().default(null), agreementRef: z.string().trim().min(2).max(200).nullable().default(null), reason: reasonSchema }),
+    },
+  }, async (req) => withTx(db, async (c) => {
+    const p = (await c.query<{ country_id: string }>('SELECT country_id, interim_settlement_eligible, interim_max_percent, interim_agreement_ref FROM providers WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!p) throw notFound();
+    assertCan(requireUser(req), 'settlements.approve', p.country_id);
+    const b = req.body;
+    if (b.eligible && (!b.maxPercent || !b.agreementRef)) throw badRequest('VALIDATION_FAILED', [{ path: '/agreementRef', message: 'eligibility needs a documented agreement and a maximum percentage' }]);
+    await c.query('UPDATE providers SET interim_settlement_eligible = $2, interim_max_percent = $3, interim_agreement_ref = $4 WHERE id = $1',
+      [req.params.id, b.eligible, b.eligible ? b.maxPercent : null, b.eligible ? b.agreementRef : null]);
+    await audit(c, actorOf(req), { action: 'provider.interim_settlement_changed', entityType: 'provider', entityId: req.params.id, before: p, after: b, reason: b.reason });
+    return { eligible: b.eligible };
+  }));
+
+  app.get('/admin/settlements/preview', {
+    ...staff('settlements.approve'), schema: { tags: ['admin:finance'], security: sec, querystring: z.object({ providerId: z.uuid(), currency }) },
+  }, async (req) => {
+    const p = (await db.query<{ country_id: string }>('SELECT country_id FROM providers WHERE id = $1', [req.query.providerId])).rows[0];
+    if (!p || !can(requireUser(req), 'settlements.approve', p.country_id)) throw notFound();
+    const el = await eligibleEarnings(db, req.query.providerId, req.query.currency);
+    return { total: fromUnits(el.total), items: el.items.map((i) => ({ ...i, amount: fromUnits(i.amount) })) };
+  });
+
+  app.post('/admin/settlements', {
+    ...staff('settlements.approve'),
+    schema: {
+      tags: ['admin:finance'], security: sec,
+      body: z.object({
+        providerId: z.uuid(), currency, accountId: z.uuid(), method: z.enum(['bank_transfer', 'cash', 'wallet']), kind: z.enum(['regular', 'interim']).default('regular'),
+        bookingId: z.uuid().optional(), amount: money.optional(), notes: z.string().max(1000).optional(),
+      }),
+    },
+  }, async (req, reply) => reply.status(201).send(await withTx(db, async (c) => {
+    const p = (await c.query<{ country_id: string }>('SELECT country_id FROM providers WHERE id = $1', [req.body.providerId])).rows[0];
+    if (!p) throw notFound();
+    assertCan(requireUser(req), 'settlements.approve', p.country_id);
+    return createSettlement(c, req.body, actorOf(req));
+  })));
+
+  const SETTLEMENT_COLUMNS = `s.id, s.number, s.provider_id AS "providerId", p.business_name AS "providerName", s.country_id AS "countryId", s.currency_code AS currency,
+    s.kind, s.amount, s.method, s.account_id AS "accountId", s.status, s.created_by AS "createdBy", s.approved_by AS "approvedBy", s.approved_at AS "approvedAt",
+    s.paid_at AS "paidAt", s.external_ref AS "externalRef", s.failure_reason AS "failureReason", s.notes, s.created_at AS "createdAt"`;
+
+  app.get('/admin/settlements', {
+    ...staff('finance.view'), schema: { tags: ['admin:finance'], security: sec, querystring: paginationQuery.extend({ providerId: z.uuid().optional(), status: z.string().max(30).optional() }) },
+  }, async (req) => {
+    const scope = countryScope(requireUser(req), 'finance.view');
+    return (await db.query(
+      `SELECT ${SETTLEMENT_COLUMNS} FROM settlements s JOIN providers p ON p.id = s.provider_id
+        WHERE ($1::uuid[] IS NULL OR s.country_id = ANY($1)) AND ($2::uuid IS NULL OR s.provider_id = $2) AND ($3::text IS NULL OR s.status = $3)
+        ORDER BY s.created_at DESC LIMIT $4 OFFSET $5`, [scope, req.query.providerId ?? null, req.query.status ?? null, req.query.limit, req.query.offset])).rows;
+  });
+
+  app.get('/admin/settlements/:id', { ...staff('finance.view'), schema: { tags: ['admin:finance'], security: sec, params: idParams } }, async (req) => {
+    const st = (await db.query(`SELECT ${SETTLEMENT_COLUMNS} FROM settlements s JOIN providers p ON p.id = s.provider_id WHERE s.id = $1`, [req.params.id])).rows[0];
+    if (!st || !can(requireUser(req), 'finance.view', st.countryId)) throw notFound();
+    st.items = (await db.query(`SELECT i.earning_id AS "earningId", i.booking_id AS "bookingId", b.number AS "bookingNumber", i.amount, i.status FROM settlement_items i JOIN bookings b ON b.id = i.booking_id WHERE i.settlement_id = $1`, [st.id])).rows;
+    st.history = (await db.query(`SELECT from_status AS "from", to_status AS "to", reason, created_at AS at FROM settlement_status_events WHERE settlement_id = $1 ORDER BY created_at, id`, [st.id])).rows;
+    return st;
+  });
+
+  const settlementAction = (path: string, body: z.ZodType, run: (c: Parameters<Parameters<typeof withTx>[1]>[0], id: string, b: Record<string, string>, ctx: ReturnType<typeof actorOf>) => Promise<unknown>) =>
+    app.post(`/admin/settlements/:id/${path}`, { ...staff('settlements.approve'), schema: { tags: ['admin:finance'], security: sec, params: idParams, body } }, async (req) => withTx(db, async (c) => {
+      const st = (await c.query<{ country_id: string }>('SELECT country_id FROM settlements WHERE id = $1', [(req.params as { id: string }).id])).rows[0];
+      if (!st) throw notFound();
+      assertCan(requireUser(req), 'settlements.approve', st.country_id);
+      await run(c, (req.params as { id: string }).id, (req.body ?? {}) as Record<string, string>, actorOf(req));
+      return (await c.query('SELECT status FROM settlements WHERE id = $1', [(req.params as { id: string }).id])).rows[0];
+    }));
+  settlementAction('approve', optionalBody(z.object({})), (c, id, _b, ctx) => approveSettlement(c, id, ctx));
+  settlementAction('mark-paid', z.object({ externalRef: z.string().trim().min(3).max(200) }), (c, id, b, ctx) => markSettlementPaid(c, id, b.externalRef!, ctx));
+  settlementAction('mark-failed', z.object({ reason: reasonSchema }), (c, id, b, ctx) => closeSettlementUnpaid(c, id, 'failed', b.reason!, ctx));
+  settlementAction('cancel', z.object({ reason: reasonSchema }), (c, id, b, ctx) => closeSettlementUnpaid(c, id, 'cancelled', b.reason!, ctx));
+
+  // =============== Provider panel: settlements ===============
+  app.get('/provider/settlements', { onRequest: deps.authenticate, preValidation: requireKind('provider'), schema: { tags: ['provider-panel'], security: sec } }, async (req) => {
+    const p = await providerOf(db, req, { forWrite: false });
+    return (await db.query(
+      `SELECT s.id, s.number, s.kind, s.amount, s.currency_code AS currency, s.method, s.status, s.paid_at AS "paidAt", s.external_ref AS "externalRef", s.created_at AS "createdAt"
+         FROM settlements s WHERE s.provider_id = $1 ORDER BY s.created_at DESC`, [p.id])).rows;
+  });
 }
