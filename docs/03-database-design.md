@@ -72,17 +72,18 @@ PostgreSQL 16. الامتدادات: `pgcrypto` (UUID)، `citext` (البريد)
 |  | **منع التعارض**: قفل صف الخدمة (`FOR UPDATE`) وحساب أقصى استخدام متزامن على `blocked_period` ≤ السعة، ثم `EXCLUDE USING gist (service_id WITH =, blocked_period WITH &&) WHERE (status = 'active' AND exclusive)` كحماية على مستوى القاعدة للخدمات الحصرية. |
 | `services.max_concurrent_bookings`, `services.slot_step_minutes` | السعة المتزامنة وشبكة المواعيد |
 
-## D. الطلبات والحجوزات (المرحلة 5) 🧩
+## D. الطلبات والحجوزات (المرحلة 5) ✅
 
 | الجدول | ملاحظات |
 |---|---|
 | `events` | id, customer_id, name, event_type, country_id, city, location, starts_at, ends_at, expected_guests, budget_amount, budget_currency, notes, status |
-| `carts`, `cart_items` | عنصر لكل (خدمة، باقة، فترة، كمية، إضافات)؛ إعادة تحقق السعر/التوافر قبل الإتمام |
-| `orders` | id, number, customer_id, event_id, country_id, currency_code, totals (snapshot), status, idempotency_key UNIQUE |
+| `cart_items` | عنصر لكل (خدمة، باقة، منتج، فترة، كمية، ضيوف، إضافات) مع `quoted_total` لاكتشاف تغير السعر؛ إعادة تحقق السعر/التوافر قبل الإتمام |
+| `orders` | id, number (ORD-سنة-تسلسل), customer_id, event_id, country_id, currency_code, subtotal/total/upfront_total, status (active/completed/closed), terms_version_id, UNIQUE(customer_id, idempotency_key) |
 | `bookings` | id, number, order_id, service_id, package_id, provider_id, period, quantity, **price_snapshot**, add_ons_snapshot, deposit_type/value/amount snapshot, cancellation_policy_snapshot, terms_version_id, requires_approval_snapshot, status, hold_expires_at, approval_deadline, payment_model, discount_amount, discount_bearer |
 | `booking_status_events` | append-only |
+|  | مشغل `bookings_snapshot_immutable` يمنع تعديل حقول اللقطة (السعر، العربون، الإضافات، السياسة، الشروط، الأطراف) بعد الإنشاء |
 
-حالات الحجز: `held` ← `pending_provider_approval` ← `awaiting_payment` ← `confirmed` ← `in_progress` ← `completed`، وفروع: `rejected`, `expired`, `cancelled_by_customer`, `cancelled_by_provider`, `cancelled_by_admin`, `no_show`.
+حالات الحجز: `pending_provider_approval` (إن تطلبت الخدمة الموافقة) ← `awaiting_payment` ← `confirmed` ← `in_progress` ← `completed`، وفروع: `rejected`, `expired`, `cancelled_by_customer`, `cancelled_by_provider`, `cancelled_by_admin`, `no_show`. الحجز المؤقت هو صف `calendar_blocks` من نوع `hold` مرتبط بالحجز.
 
 ## E. المالية (المراحل 6–7) 🧩 — انظر `05-financial-design.md`
 

@@ -1,6 +1,7 @@
 import { loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { releaseExpiredHolds } from './modules/availability/engine.js';
+import { expireBookings, warnExpiringHolds } from './modules/booking/service.js';
 
 /**
  * Scheduled jobs (clause 73). Run as its own process: `npm run worker`.
@@ -10,7 +11,10 @@ const config = loadConfig();
 const db = createPool(config.DATABASE_URL);
 
 const jobs: { name: string; everyMs: number; run: () => Promise<number> }[] = [
+  // Bookings first, so an expiring booking frees its own hold with a booking-specific reason and notice.
+  { name: 'expire-bookings', everyMs: 30_000, run: () => expireBookings(db) },
   { name: 'release-expired-holds', everyMs: 30_000, run: () => releaseExpiredHolds(db) },
+  { name: 'warn-expiring-holds', everyMs: 60_000, run: () => warnExpiringHolds(db) },
 ];
 
 async function tick(job: (typeof jobs)[number]) {

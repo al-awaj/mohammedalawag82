@@ -21,6 +21,30 @@ export const SETTINGS = {
     scopes: ['global', 'country'],
     description: { ar: 'مدة الحجز المؤقت بالدقائق (تُستخدم في المرحلة 5)', en: 'Temporary hold duration in minutes (used by phase 5)' },
   }),
+  'booking.approval_window_hours': def({
+    schema: z.number().int().min(1).max(24 * 14),
+    default: 24,
+    scopes: ['global', 'country'],
+    description: { ar: 'مهلة رد صاحب الخدمة على الحجز الذي يتطلب موافقته (بالساعات)، ويبقى الموعد محجوزًا خلالها', en: 'Hours a provider has to accept or reject an approval-required booking; the slot stays held meanwhile' },
+  }),
+  'booking.payment_window_hours': def({
+    schema: z.number().int().min(1).max(24 * 7),
+    default: 24,
+    scopes: ['global', 'country'],
+    description: { ar: 'مهلة الدفع بعد قبول صاحب الخدمة للحجز (بالساعات)', en: 'Hours the customer has to pay after the provider accepts' },
+  }),
+  'booking.expiry_warning_minutes': def({
+    schema: z.number().int().min(1).max(24 * 60),
+    default: 5,
+    scopes: ['global', 'country'],
+    description: { ar: 'إرسال تنبيه للعميل قبل انتهاء الحجز المؤقت بهذه الدقائق', en: 'Warn the customer this many minutes before a hold expires' },
+  }),
+  'booking.require_verified_phone': def({
+    schema: z.boolean(),
+    default: true,
+    scopes: ['global', 'country'],
+    description: { ar: 'اشتراط التحقق من هاتف العميل قبل إتمام الحجز', en: 'Require a verified customer phone before checkout' },
+  }),
   'auth.require_phone_verification': def({
     schema: z.boolean(),
     default: true,

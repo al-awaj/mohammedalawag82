@@ -124,6 +124,8 @@ export interface ReserveInput {
   reason?: string | null;
   internalNotes?: string | null;
   actorId: string | null;
+  /** Hold length override (e.g. an approval window); defaults to the booking.hold_minutes setting. */
+  holdMinutes?: number;
 }
 
 export interface Reservation { id: string; expiresAt: Date | null }
@@ -180,7 +182,7 @@ export async function reserve(c: pg.PoolClient, input: ReserveInput): Promise<Re
   const peak = peakUsage(intervals, blocked.s.getTime(), blocked.e.getTime());
   if (peak + (kind === 'closed' ? 1 : units) > capacity) throw conflict('SLOT_UNAVAILABLE', { capacity, inUse: peak });
 
-  const holdMinutes = kind === 'hold' ? await getSetting(c, 'booking.hold_minutes', svc.country_id) : null;
+  const holdMinutes = kind === 'hold' ? input.holdMinutes ?? (await getSetting(c, 'booking.hold_minutes', svc.country_id)) : null;
   try {
     const row = (await c.query<{ id: string; expires_at: Date | null }>(
       `INSERT INTO calendar_blocks (service_id, rental_item_id, kind, period, blocked_period, units, exclusive, expires_at,
@@ -201,7 +203,7 @@ export async function reserve(c: pg.PoolClient, input: ReserveInput): Promise<Re
  * Turns a hold into a confirmed booking block. A hold that expired or was released is never
  * confirmed as-is: availability is checked again from scratch (clause 28).
  */
-export async function confirmHold(c: pg.PoolClient, blockId: string, bookingRef: string, actorId: string | null): Promise<Reservation> {
+export async function confirmHold(c: pg.PoolClient, blockId: string, bookingRef: string | null, actorId: string | null): Promise<Reservation> {
   const b = (await c.query<{ id: string; service_id: string; rental_item_id: string | null; period_s: Date; period_e: Date; units: number; status: string; kind: string; live: boolean }>(
     `SELECT id, service_id, rental_item_id, lower(period) AS period_s, upper(period) AS period_e, units, status, kind,
             (status = 'active' AND expires_at > now()) AS live

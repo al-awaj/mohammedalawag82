@@ -218,7 +218,8 @@ describe('temporary holds (test 9, clause 32)', () => {
   it('confirms a live hold in place, and re-checks an expired one', async () => {
     const { p, serviceId } = await publish(hallType);
     await goLive(p, serviceId);
-    const ref = () => crypto.randomUUID();
+    // Engine-level test: no booking row exists, so no booking reference is attached.
+    const ref = () => null;
 
     const live = await hold({ serviceId, ...day(MON) });
     const confirmed = await withTx(ctx.db, (c) => confirmHold(c, live.id, ref(), null));
