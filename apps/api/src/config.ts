@@ -11,6 +11,7 @@ const schema = z.object({
   CORS_ORIGINS: z.string().default(''),
   STORAGE_DIR: z.string().default('./storage'),
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
+  MAX_VIDEO_BYTES: z.coerce.number().int().positive().default(100 * 1024 * 1024),
   LOGIN_MAX_FAILURES: z.coerce.number().int().positive().default(5),
   LOGIN_LOCK_MINUTES: z.coerce.number().int().positive().default(15),
   RATE_LIMIT_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),

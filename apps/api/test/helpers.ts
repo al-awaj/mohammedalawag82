@@ -111,3 +111,40 @@ export async function latestCode(ctx: Ctx, userId: string, templateKey: string):
 export async function expireCooldown(ctx: Ctx, userId: string) {
   await ctx.db.query(`UPDATE verification_codes SET created_at = created_at - interval '2 minutes' WHERE user_id = $1`, [userId]);
 }
+
+export const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
+// Smallest valid PNG header + IHDR is enough for magic-byte detection.
+export const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 1)]);
+export const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(64, 2)]);
+
+/** multipart/form-data upload; text fields are sent before the file as the API requires. */
+export async function upload(ctx: Ctx, url: string, token: string, file: Buffer, fields: Record<string, string> = {}, name = 'file.bin') {
+  const boundary = '----test' + Math.random().toString(16).slice(2);
+  const parts = Object.entries(fields).map(([k, v]) => Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`));
+  const payload = Buffer.concat([
+    ...parts,
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`),
+    file,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  const res = await ctx.app.inject({ method: 'POST', url, payload, headers: { authorization: `Bearer ${token}`, 'content-type': `multipart/form-data; boundary=${boundary}` } });
+  return { status: res.statusCode, body: JSON.parse(res.body) };
+}
+
+/** Full onboarding through the real API: register, verify phone, apply with documents, approve. */
+export async function approvedProvider(ctx: Ctx, staffToken: string, countryCode: string, prefix = '+966') {
+  const p = await register(ctx, countryCode, 'provider', prefix);
+  const code = await latestCode(ctx, p.userId, 'auth.verify_phone');
+  await api(ctx, 'POST', '/v1/auth/verification/confirm', { token: p.token, body: { channel: 'phone', code } });
+  const app = await api(ctx, 'POST', '/v1/provider-applications', {
+    token: p.token, body: { businessName: `Biz ${uniq()}`, activityType: 'events', countryCode, city: 'Riyadh', phone: p.phone },
+  });
+  for (const docType of ['identity', 'commercial_registration']) {
+    await upload(ctx, `/v1/provider-applications/${app.body.id}/documents`, p.token, PDF, { docType });
+  }
+  await api(ctx, 'POST', `/v1/provider-applications/${app.body.id}/submit`, { token: p.token, body: { acceptTerms: true } });
+  const ok = await api(ctx, 'POST', `/v1/admin/provider-applications/${app.body.id}/actions`, { token: staffToken, body: { action: 'approve' } });
+  if (ok.status !== 200) throw new Error(`approve: ${JSON.stringify(ok.body)}`);
+  const providerId = (await ctx.db.query<{ id: string }>('SELECT id FROM providers WHERE user_id = $1', [p.userId])).rows[0]!.id;
+  return { ...p, providerId, applicationId: app.body.id as string };
+}

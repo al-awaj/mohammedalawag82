@@ -26,6 +26,9 @@ import { providerRoutes } from './modules/providers/routes.js';
 import { staffRoutes } from './modules/staff/routes.js';
 import { settingsRoutes } from './modules/settings/routes.js';
 import { auditRoutes } from './modules/audit/routes.js';
+import { catalogAdminRoutes } from './modules/catalog/admin-routes.js';
+import { catalogProviderRoutes } from './modules/catalog/provider-routes.js';
+import { catalogPublicRoutes } from './modules/catalog/public-routes.js';
 
 export async function buildApp(config: Config, db: Db) {
   const app = Fastify({
@@ -46,7 +49,7 @@ export async function buildApp(config: Config, db: Db) {
   if (config.RATE_LIMIT_ENABLED) {
     await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
   }
-  await app.register(multipart, { limits: { fileSize: config.MAX_UPLOAD_BYTES, files: 1, fields: 5 } });
+  await app.register(multipart, { limits: { fileSize: Math.max(config.MAX_UPLOAD_BYTES, config.MAX_VIDEO_BYTES), files: 1, fields: 5 } });
   await app.register(swagger, {
     openapi: {
       info: { title: 'Events Platform API', version: '1' },
@@ -91,7 +94,7 @@ export async function buildApp(config: Config, db: Db) {
     config,
     db,
     tokens,
-    storage: new LocalStorage(config.STORAGE_DIR, config.MAX_UPLOAD_BYTES),
+    storage: new LocalStorage(config.STORAGE_DIR, config.MAX_UPLOAD_BYTES, config.MAX_VIDEO_BYTES),
     authenticate: makeAuthenticate(db, tokens),
   };
 
@@ -107,6 +110,9 @@ export async function buildApp(config: Config, db: Db) {
     await staffRoutes(v1, deps);
     await settingsRoutes(v1, deps);
     await auditRoutes(v1, deps);
+    await catalogAdminRoutes(v1, deps);
+    await catalogProviderRoutes(v1, deps);
+    await catalogPublicRoutes(v1, deps);
   }, { prefix: '/v1' });
 
   return app;

@@ -2,7 +2,7 @@
 
 منصة متعددة الدول لحجز وشراء وإدارة خدمات الأعراس والحفلات وجميع المناسبات: تطبيق عملاء (Android/iOS)، موقع عملاء، لوحة إدارة مركزية، ولوحة ويب لأصحاب الخدمات — فوق واجهة خلفية واحدة.
 
-> **الحالة الحالية: المرحلتان 1 و2 من 12.** راجع [`docs/00-roadmap.md`](docs/00-roadmap.md) لما نُفّذ وما لم يُنفّذ بعد. لا تُعد المنصة جاهزة للإنتاج.
+> **الحالة الحالية: المراحل 1 إلى 3 من 12.** راجع [`docs/00-roadmap.md`](docs/00-roadmap.md) لما نُفّذ وما لم يُنفّذ بعد. لا تُعد المنصة جاهزة للإنتاج.
 
 ## الوثائق
 
@@ -33,6 +33,8 @@ npm run dev                                  # http://localhost:3000 — توث�
 1. إنشاء دولة وتفعيلها: `POST /v1/admin/countries`.
 2. نشر الشروط وسياسة الخصوصية للدولة: `POST /v1/admin/terms` (`customer_terms`, `provider_terms`, `privacy_policy`). **التسجيل يُرفض حتى تُنشر.**
 3. إنشاء الموظفين وإسناد أدوارهم: `POST /v1/admin/staff`.
+4. إنشاء التصنيفات وإتاحتها للدولة، ثم أنواع الخدمات وحقولها: `POST /v1/admin/categories`, `POST /v1/admin/service-types`.
+5. بعد قبول صاحب خدمة، منحه الأنواع المسموح بها: `PUT /v1/admin/providers/:id/service-types`.
 
 ## الاختبارات
 
@@ -54,6 +56,9 @@ npm run typecheck
 | الإدارة: أصحاب الخدمات | `GET /admin/provider-applications[/:id]`, `POST /admin/provider-applications/:id/actions` (`start_review`, `request_info`, `approve`, `reject`, `suspend`, `reactivate`), `GET /admin/providers` |
 | الإدارة: مرجعي | `/admin/currencies`, `/admin/countries`, `/admin/exchange-rates`, `/admin/terms` |
 | الإدارة: الوصول | `/admin/permissions`, `/admin/roles`, `/admin/users`, `/admin/users/:id/status`, `/admin/staff`, `/admin/staff/:id/roles` |
+| الكتالوج العام | `GET /categories`, `GET /services` (بحث), `GET /services/:id`, `GET /media/:id` |
+| لوحة صاحب الخدمة | `/provider/service-types`, `/provider/services[/:id]`, `POST /provider/services/:id/{submit,unpublish,packages,rental-items,media}`, `PATCH /provider/{packages,rental-items,media}/:id`, `/provider/cancellation-policies` |
+| الإدارة: الكتالوج | `/admin/categories`, `/admin/service-types[/:id/fields]`, `/admin/providers/:id/service-types`, `/admin/services[/:id/actions]`, `/admin/cancellation-policies` |
 | الإدارة: الإعدادات والتدقيق | `GET /admin/settings`, `PUT /admin/settings/:key`, `GET /admin/settings/:key/history`, `GET /admin/audit-log` |
 
 صيغة الأخطاء موحدة ومترجمة حسب `Accept-Language`:

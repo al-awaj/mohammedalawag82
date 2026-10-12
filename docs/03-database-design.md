@@ -46,7 +46,7 @@ PostgreSQL 16. الامتدادات: `pgcrypto` (UUID)، `citext` (البريد)
 | `audit_log` | id bigserial, actor_id, actor_kind, action, entity_type, entity_id, before jsonb, after jsonb, reason, ip, request_id, created_at | **append-only** بمشغل يمنع UPDATE/DELETE/TRUNCATE |
 | `message_outbox` | id, channel, recipient_user_id, target, template_key, payload, language, status (pending/sent/failed), attempts, last_error, provider_ref, created_at, sent_at | يُستخدم لاحقًا كسجل الإشعارات (البند 54) |
 
-## B. محرك الخدمات (المرحلة 3) 🧩
+## B. محرك الخدمات (المرحلة 3) ✅
 
 | الجدول | أعمدة أساسية |
 |---|---|
@@ -54,8 +54,11 @@ PostgreSQL 16. الامتدادات: `pgcrypto` (UUID)، `citext` (البريد)
 | `service_category_countries` | category_id, country_id |
 | `service_types` | id, category_id, code, name jsonb, description jsonb, icon, booking_mode (time_slot/full_day/date_range/quantity_rental), default_requires_approval, default_duration_minutes, buffer_before/after_minutes, capacity_mode, required_images, required_documents jsonb, pricing_options jsonb, is_active, version |
 | `service_type_fields` | id, service_type_id, key, label jsonb, data_type (text/number/bool/select/multiselect/date/media/geo), is_required, validation jsonb, options jsonb, is_searchable, is_reportable, sort_order |
-| `services` | id, provider_id, service_type_id, country_id, city, title jsonb, description jsonb, location, base_price, currency_code, capacity, **requires_provider_approval** (D5), cancellation_policy_id, status (draft/pending_review/published/unpublished/suspended), published_at |
-| `service_field_values` | service_id, field_id, value jsonb | تُتحقق بقواعد `service_type_fields.validation` |
+| `services` | id, provider_id, service_type_id, country_id, city, title jsonb, description jsonb, location, base_price, currency_code, pricing_unit, capacity, **requires_provider_approval** (D5), cancellation_policy_id, deposit_type/value, balance_due_days_before, attributes jsonb, status (draft/pending_review/published/unpublished/suspended), published_at |
+| `services.attributes` | قيم الحقول الديناميكية كـ JSONB مفهرس GIN بدل جدول EAV، وتُتحقق في الخادم بقواعد `service_type_fields` (مفاتيح غير معروفة مرفوضة) |
+| `service_status_events` | سجل حالات الخدمة append-only |
+| `provider_service_types` | الأنواع المسموح لكل صاحب خدمة بتقديمها |
+| `cancellation_policies` | سياسة منصة (provider_id NULL) أو خاصة بصاحب الخدمة: شرائح استرداد حسب الساعات قبل الموعد، استرداد العربون، الإلغاء الذاتي، المراجعة اليدوية |
 | `service_media` | id, service_id, kind (image/video), file_key, sort_order, is_past_work |
 | `packages` | id, service_id, name jsonb, description jsonb, price, currency_code, duration_minutes, inclusions jsonb, add_ons jsonb, terms jsonb, available_weekdays int[], max_bookings_per_slot, deposit_type (fixed/percent/none), deposit_value, balance_due_rule jsonb, valid_from, valid_to, status |
 | `rental_items` | id, service_id, sku, attributes jsonb (size, color…), quantity_total, condition, daily_price, security_deposit, late_fee_rule jsonb |

@@ -33,11 +33,17 @@ export const SETTINGS = {
     scopes: ['global', 'country'],
     description: { ar: 'الوثائق المطلوبة لطلب تسجيل صاحب الخدمة', en: 'Documents required for a provider application' },
   }),
+  'services.require_review': def({
+    schema: z.boolean(),
+    default: true,
+    scopes: ['global', 'country'],
+    description: { ar: 'اشتراط مراجعة الإدارة قبل نشر الخدمة', en: 'Require staff review before a service is published' },
+  }),
   'providers.public_identity_visible': def({
     schema: z.boolean(),
     default: true,
     scopes: ['global', 'country'],
-    description: { ar: 'إظهار اسم صاحب الخدمة في الواجهات العامة (تُستخدم في المرحلة 3)', en: 'Show provider name on public pages (used by phase 3)' },
+    description: { ar: 'إظهار اسم صاحب الخدمة في الواجهات العامة ', en: 'Show provider name on public pages' },
   }),
 } as const;
 
