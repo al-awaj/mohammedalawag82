@@ -2,7 +2,7 @@
 
 منصة متعددة الدول لحجز وشراء وإدارة خدمات الأعراس والحفلات وجميع المناسبات: تطبيق عملاء (Android/iOS)، موقع عملاء، لوحة إدارة مركزية، ولوحة ويب لأصحاب الخدمات — فوق واجهة خلفية واحدة.
 
-> **الحالة الحالية: المراحل 1 إلى 3 من 12.** راجع [`docs/00-roadmap.md`](docs/00-roadmap.md) لما نُفّذ وما لم يُنفّذ بعد. لا تُعد المنصة جاهزة للإنتاج.
+> **الحالة الحالية: المراحل 1 إلى 4 من 12.** راجع [`docs/00-roadmap.md`](docs/00-roadmap.md) لما نُفّذ وما لم يُنفّذ بعد. لا تُعد المنصة جاهزة للإنتاج.
 
 ## الوثائق
 
@@ -27,6 +27,7 @@ npm run migrate                              # ترحيل قاعدة البيا�
 npm run seed:reference                       # اللغات، العملات المرجعية، الصلاحيات، الأدوار النظامية
 npm run create-admin -- --name "Admin" --email admin@example.com --password 'StrongPass123'
 npm run dev                                  # http://localhost:3000 — توثيق API على /docs
+npm run worker                               # المهام المجدولة (تحرير الحجوزات المؤقتة المنتهية)
 ```
 
 خطوات التهيئة الأولى من لوحة الإدارة (أو API):
@@ -59,6 +60,7 @@ npm run typecheck
 | الكتالوج العام | `GET /categories`, `GET /services` (بحث), `GET /services/:id`, `GET /media/:id` |
 | لوحة صاحب الخدمة | `/provider/service-types`, `/provider/services[/:id]`, `POST /provider/services/:id/{submit,unpublish,packages,rental-items,media}`, `PATCH /provider/{packages,rental-items,media}/:id`, `/provider/cancellation-policies` |
 | الإدارة: الكتالوج | `/admin/categories`, `/admin/service-types[/:id/fields]`, `/admin/providers/:id/service-types`, `/admin/services[/:id/actions]`, `/admin/cancellation-policies` |
+| التوافر والتقويم | `GET /services/:id/availability`, `GET/PUT /provider/services/:id/availability-rules`, `POST /provider/services/:id/blocks`, `DELETE /provider/blocks/:id`, `GET /provider/calendar`, `GET /admin/calendar`, `POST /admin/services/:id/blocks`, `DELETE /admin/blocks/:id` |
 | الإدارة: الإعدادات والتدقيق | `GET /admin/settings`, `PUT /admin/settings/:key`, `GET /admin/settings/:key/history`, `GET /admin/audit-log` |
 
 صيغة الأخطاء موحدة ومترجمة حسب `Accept-Language`:

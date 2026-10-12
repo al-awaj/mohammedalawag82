@@ -10,7 +10,8 @@
     "seed:reference": "node --env-file-if-exists=.env --import tsx src/scripts/seed-reference.ts",
     "create-admin": "node --env-file-if-exists=.env --import tsx src/scripts/create-admin.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "worker": "node --env-file-if-exists=.env --import tsx src/worker.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.1",

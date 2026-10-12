@@ -21,6 +21,8 @@ const searchQuery = z.object({
   radiusKm: z.coerce.number().positive().max(500).optional(),
   // JSON object of searchable type fields, e.g. {"style":"modern","seats":{"min":100}}. Requires `type`.
   attrs: z.string().max(2000).optional(),
+  // Local date in the country's timezone: keeps services that are open that day and not fully occupied.
+  date: z.iso.date().optional(),
   sort: z.enum(['newest', 'price_asc', 'price_desc', 'distance']).default('newest'),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
@@ -86,6 +88,21 @@ export async function catalogPublicRoutes(app: App, deps: Deps) {
     if (q.maxPrice) add((n) => `${priceExpr} <= ${n}::numeric`, q.maxPrice);
     if (q.minCapacity) add((n) => `s.capacity >= ${n}`, q.minCapacity);
 
+    if (q.date) {
+      // Open that weekday (or no opening rules) and some capacity left during the local day. For time-slot
+      // services this is a day-level check; exact slots come from GET /services/:id/availability.
+      add((n) => `(NOT EXISTS (SELECT 1 FROM availability_rules r WHERE r.service_id = s.id)
+                 OR EXISTS (SELECT 1 FROM availability_rules r WHERE r.service_id = s.id AND r.weekday = extract(dow FROM ${n}::date)))
+               AND (t.booking_mode = 'quantity_rental' OR NOT EXISTS (
+                 SELECT 1 FROM calendar_blocks b WHERE b.service_id = s.id AND b.status = 'active' AND NOT (b.kind = 'hold' AND b.expires_at <= now())
+                   AND b.blocked_period @> tstzrange(${n}::date::timestamp AT TIME ZONE co.timezone, (${n}::date + 1)::timestamp AT TIME ZONE co.timezone)
+                   AND (b.kind = 'closed' OR s.max_concurrent_bookings = 1)))
+               AND (t.booking_mode = 'time_slot' OR t.booking_mode = 'quantity_rental' OR (
+                 SELECT coalesce(sum(b.units), 0) FROM calendar_blocks b WHERE b.service_id = s.id AND b.status = 'active'
+                   AND NOT (b.kind = 'hold' AND b.expires_at <= now())
+                   AND b.blocked_period && tstzrange(${n}::date::timestamp AT TIME ZONE co.timezone, (${n}::date + 1)::timestamp AT TIME ZONE co.timezone)
+               ) < s.max_concurrent_bookings)`, q.date);
+    }
     if (q.attrs) {
       if (!q.type) throw badRequest('VALIDATION_FAILED', [{ path: '/attrs', message: 'attribute filters require `type`' }]);
       let filters: Record<string, unknown>;

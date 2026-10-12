@@ -63,13 +63,14 @@ PostgreSQL 16. الامتدادات: `pgcrypto` (UUID)، `citext` (البريد)
 | `packages` | id, service_id, name jsonb, description jsonb, price, currency_code, duration_minutes, inclusions jsonb, add_ons jsonb, terms jsonb, available_weekdays int[], max_bookings_per_slot, deposit_type (fixed/percent/none), deposit_value, balance_due_rule jsonb, valid_from, valid_to, status |
 | `rental_items` | id, service_id, sku, attributes jsonb (size, color…), quantity_total, condition, daily_price, security_deposit, late_fee_rule jsonb |
 
-## C. التوافر (المرحلة 4) 🧩
+## C. التوافر (المرحلة 4) ✅
 
 | الجدول | ملاحظات |
 |---|---|
 | `availability_rules` | ساعات العمل الأسبوعية لكل خدمة/مورد، بتوقيت الدولة |
-| `calendar_blocks` | id, service_id, resource_key, period tstzrange, kind (booking_hold/booking_confirmed/external/closed/buffer), booking_id NULL, units int, notes_internal |
-|  | **منع التعارض**: للخدمات أحادية السعة `EXCLUDE USING gist (service_id WITH =, period WITH &&) WHERE (kind <> 'released')`. للخدمات متعددة السعة/المنتجات المؤجرة: قفل صف `rental_items/packages` + مجموع `units` المتداخلة ≤ السعة داخل نفس المعاملة (`SELECT … FOR UPDATE`). |
+| `calendar_blocks` | id, service_id, rental_item_id, kind (hold/booking/external/closed), period، blocked_period (مع أوقات التجهيز)، units، exclusive، status (active/released)، expires_at (للحجز المؤقت)، booking_ref، reason، internal_notes، من أنشأ/حرر ولماذا |
+|  | **منع التعارض**: قفل صف الخدمة (`FOR UPDATE`) وحساب أقصى استخدام متزامن على `blocked_period` ≤ السعة، ثم `EXCLUDE USING gist (service_id WITH =, blocked_period WITH &&) WHERE (status = 'active' AND exclusive)` كحماية على مستوى القاعدة للخدمات الحصرية. |
+| `services.max_concurrent_bookings`, `services.slot_step_minutes` | السعة المتزامنة وشبكة المواعيد |
 
 ## D. الطلبات والحجوزات (المرحلة 5) 🧩
 

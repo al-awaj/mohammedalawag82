@@ -35,6 +35,8 @@ const serviceFields = z.object({
   requiresProviderApproval: z.boolean(),
   cancellationPolicyId: z.uuid().nullable(),
   attributes: z.record(z.string(), z.unknown()),
+  maxConcurrentBookings: z.number().int().min(1).max(1000),
+  slotStepMinutes: z.number().int().min(5).max(1440).nullable(),
   ...depositFields,
 });
 
@@ -50,6 +52,8 @@ const serviceCreate = serviceFields.extend({
   requiresProviderApproval: z.boolean().optional(),
   cancellationPolicyId: z.uuid().nullable().default(null),
   attributes: z.record(z.string(), z.unknown()).default({}),
+  maxConcurrentBookings: z.number().int().min(1).max(1000).default(1),
+  slotStepMinutes: z.number().int().min(5).max(1440).nullable().default(null),
   depositType: z.enum(['none', 'fixed', 'percent']).default('none'),
   depositValue: moneySchema.default('0'),
   balanceDueDaysBefore: z.number().int().min(0).max(365).default(0),
@@ -220,12 +224,12 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
       const serviceId = (await c.query<{ id: string }>(
         `INSERT INTO services (provider_id, service_type_id, country_id, city, address, latitude, longitude, title, description, terms,
            base_price, currency_code, pricing_unit, duration_minutes, capacity, requires_provider_approval, cancellation_policy_id,
-           deposit_type, deposit_value, balance_due_days_before, attributes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id`,
+           deposit_type, deposit_value, balance_due_days_before, attributes, max_concurrent_bookings, slot_step_minutes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
         [p.id, type.id, p.country_id, b.city, b.address, b.latitude, b.longitude, JSON.stringify(b.title), JSON.stringify(b.description),
           b.terms ? JSON.stringify(b.terms) : null, b.basePrice, b.currency, b.pricingUnit, b.durationMinutes ?? type.default_duration_minutes,
           b.capacity, b.requiresProviderApproval ?? type.default_requires_approval, b.cancellationPolicyId, b.depositType, b.depositValue,
-          b.balanceDueDaysBefore, JSON.stringify(v.value)])).rows[0]!.id;
+          b.balanceDueDaysBefore, JSON.stringify(v.value), b.maxConcurrentBookings, b.slotStepMinutes])).rows[0]!.id;
       await recordServiceStatus(c, serviceId, null, 'draft', requireUser(req).id, null);
       await audit(c, actorOf(req), { action: 'service.created', entityType: 'service', entityId: serviceId, after: b });
       return serviceId;
@@ -270,14 +274,16 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
            requires_provider_approval = coalesce($19, requires_provider_approval),
            cancellation_policy_id = CASE WHEN $20 THEN $21::uuid ELSE cancellation_policy_id END,
            deposit_type = $22, deposit_value = $23, balance_due_days_before = coalesce($24, balance_due_days_before),
-           attributes = coalesce($25, attributes)
+           attributes = coalesce($25, attributes), max_concurrent_bookings = coalesce($26, max_concurrent_bookings),
+           slot_step_minutes = CASE WHEN $27 THEN $28::int ELSE slot_step_minutes END
          WHERE id = $1`,
         [req.params.id, b.title ? JSON.stringify(b.title) : null, b.description ? JSON.stringify(b.description) : null,
           has('terms'), b.terms ? JSON.stringify(b.terms) : null, b.city ?? null, has('address'), b.address ?? null,
           has('latitude') || has('longitude'), b.latitude ?? null, b.longitude ?? null, b.basePrice ?? null, b.currency ?? null,
           b.pricingUnit ?? null, has('durationMinutes'), b.durationMinutes ?? null, has('capacity'), b.capacity ?? null,
           b.requiresProviderApproval ?? null, has('cancellationPolicyId'), b.cancellationPolicyId ?? null, deposit.type, deposit.value,
-          b.balanceDueDaysBefore ?? null, attributes ? JSON.stringify(attributes) : null]);
+          b.balanceDueDaysBefore ?? null, attributes ? JSON.stringify(attributes) : null, b.maxConcurrentBookings ?? null,
+          has('slotStepMinutes'), b.slotStepMinutes ?? null]);
       const after = (await c.query('SELECT latitude, longitude FROM services WHERE id = $1', [req.params.id])).rows[0];
       if ((after.latitude === null) !== (after.longitude === null)) throw badRequest('VALIDATION_FAILED', [{ path: '/latitude', message: 'latitude and longitude go together' }]);
       // Price and terms changes are audited with before/after; existing bookings keep their own snapshot (phase 5).

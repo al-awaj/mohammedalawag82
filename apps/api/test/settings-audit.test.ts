@@ -26,9 +26,11 @@ describe('settings', () => {
     expect((await put({ scope: 'country', value: 5, reason: 'no country' })).body.error.code).toBe('SCOPE_NOT_ALLOWED');
     expect((await api(ctx, 'PUT', '/v1/admin/settings/booking.typo', { token: admin.token, body: { scope: 'global', value: 1, reason: 'typo' } })).body.error.code).toBe('UNKNOWN_SETTING');
 
-    const history = await api(ctx, 'GET', '/v1/admin/settings/booking.hold_minutes/history', { token: admin.token });
-    expect(history.body.map((h: { newValue: number }) => h.newValue)).toEqual([10, 20]);
-    expect(history.body[1]).toMatchObject({ oldValue: null, reason: 'Payment gateway is slow' });
+    // Other test files change this key for their own countries; keep only this file's entries.
+    const history = (await api(ctx, 'GET', '/v1/admin/settings/booking.hold_minutes/history', { token: admin.token })).body
+      .filter((h: { countryId: string | null }) => h.countryId === null || h.countryId === country.id);
+    expect(history.map((h: { newValue: number }) => h.newValue)).toEqual([10, 20]);
+    expect(history[1]).toMatchObject({ oldValue: null, reason: 'Payment gateway is slow' });
 
     // Reset global so other files see the default.
     await put({ scope: 'global', value: 15, reason: 'Restore default' });
