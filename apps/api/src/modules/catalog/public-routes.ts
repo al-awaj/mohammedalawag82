@@ -24,6 +24,8 @@ const searchQuery = z.object({
   // Local date in the country's timezone: keeps services that are open that day and not fully occupied.
   date: z.iso.date().optional(),
   minRating: z.coerce.number().min(1).max(5).optional(),
+  // Services of one provider; only answers for providers whose identity is public (clause 68).
+  provider: z.uuid().optional(),
   sort: z.enum(['newest', 'price_asc', 'price_desc', 'distance', 'rating']).default('newest'),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
@@ -75,6 +77,11 @@ export async function catalogPublicRoutes(app: App, deps: Deps) {
     ];
     const add = (sql: (n: string) => string, v: unknown) => { params.push(v); where.push(sql(`$${params.length}`)); };
     if (q.city) add((n) => `lower(s.city) = lower(${n})`, q.city);
+    if (q.provider) {
+      const cid = (await db.query<{ id: string }>('SELECT id FROM countries WHERE code = $1', [q.country])).rows[0]?.id;
+      if (!cid || !(await identityVisible(db, cid, true))) return { total: 0, items: [] };
+      add((n) => `s.provider_id = ${n} AND p.show_identity`, q.provider);
+    }
     if (q.type) add((n) => `t.code = ${n}`, q.type);
     if (q.category) {
       add((n) => `t.category_id IN (WITH RECURSIVE sub AS (SELECT id FROM service_categories WHERE slug = ${n} AND is_active
@@ -180,6 +187,28 @@ export async function catalogPublicRoutes(app: App, deps: Deps) {
         rating: r.rating, reviewCount: r.review_count,
         coverUrl: r.cover_id ? `/v1/media/${r.cover_id}` : null,
       })),
+    };
+  });
+
+  /**
+   * Public provider page. Only providers whose identity may be shown (their own flag and the country setting) have one;
+   * otherwise the answer is the same 404 as an unknown id, so a hidden identity cannot be probed.
+   */
+  app.get('/providers/:id', { schema: { tags: ['catalog'], params: z.object({ id: z.uuid() }) } }, async (req) => {
+    const p = (await db.query<{ id: string; business_name: string; activity_type: string; city: string; description: string | null;
+      country_id: string; country_code: string; show_identity: boolean; created_at: Date }>(
+      `SELECT p.id, p.business_name, p.activity_type, p.city, p.description, p.country_id, c.code AS country_code, p.show_identity, p.created_at
+         FROM providers p JOIN countries c ON c.id = p.country_id WHERE p.id = $1 AND p.status = 'active' AND c.is_active`, [req.params.id])).rows[0];
+    if (!p || !(await identityVisible(db, p.country_id, p.show_identity))) throw notFound();
+    const rating = (await db.query<{ average: string | null; count: number }>(
+      `SELECT round(avg(r.rating), 2)::text AS average, count(*)::int AS count FROM reviews r JOIN services s ON s.id = r.service_id
+        WHERE s.provider_id = $1 AND r.status = 'published'`, [p.id])).rows[0]!;
+    const services = (await db.query<{ id: string }>(
+      `SELECT s.id FROM services s JOIN service_types t ON t.id = s.service_type_id
+        WHERE s.provider_id = $1 AND s.status = 'published' AND t.is_active`, [p.id])).rowCount ?? 0;
+    return {
+      id: p.id, businessName: p.business_name, activityType: p.activity_type, city: p.city, description: p.description,
+      countryCode: p.country_code, memberSince: p.created_at, rating, serviceCount: services,
     };
   });
 

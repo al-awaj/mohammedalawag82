@@ -37,3 +37,6 @@
 .budget-bar { height: 10px; border-radius: 999px; background: var(--neutral-soft); overflow: hidden; margin-block: 10px 4px; }
 .budget-bar > span { display: block; height: 100%; background: var(--primary); border-radius: inherit; }
 .budget-bar > span.over { background: var(--bad); }
+.faq { border-top: 1px solid var(--border); padding-block: 10px; }
+.faq > summary { cursor: pointer; font-weight: 600; }
+.faq > div { margin-top: 8px; }

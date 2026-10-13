@@ -10,7 +10,7 @@ export interface PublicService {
   id: string; title: Record<string, string>; description: Record<string, string>; terms: Record<string, string> | null; city: string; countryCode: string;
   basePrice: string; currency: string; pricingUnit: string; durationMinutes: number | null; capacity: number | null; requiresProviderApproval: boolean;
   depositType: string; depositValue: string; typeName: Record<string, string>; bookingMode: 'time_slot' | 'full_day' | 'date_range' | 'quantity_rental'; capacityMode: string;
-  providerName: string | null; attributes: Record<string, unknown>;
+  providerName: string | null; providerId: string | null; attributes: Record<string, unknown>;
   fields: { key: string; label: Record<string, string>; dataType: string; options: { value: string; label: Record<string, string> }[] }[];
   cancellationPolicy: { description: Record<string, string>; tiers: { hoursBefore: number; refundPercentOfPaid: number }[]; depositRefundable: boolean } | null;
   packages: { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; inclusions: unknown[]; addOns: { code: string; name: Record<string, string>; price: string }[]; durationMinutes: number | null; terms: Record<string, string> | null }[];

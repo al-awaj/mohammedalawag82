@@ -13,7 +13,7 @@ const PUBLIC = new Set([
   'POST /v1/auth/register', 'POST /v1/auth/login', 'POST /v1/auth/refresh', 'POST /v1/auth/password/forgot', 'POST /v1/auth/password/reset',
   'GET /v1/languages', 'GET /v1/currencies', 'GET /v1/countries', 'GET /v1/exchange-rates/latest', 'GET /v1/terms/current',
   'GET /v1/categories', 'GET /v1/categories/{id}/image', 'GET /v1/services', 'GET /v1/services/{id}', 'GET /v1/services/{id}/availability',
-  'GET /v1/services/{id}/reviews', 'GET /v1/media/{id}', 'POST /v1/quote',
+  'GET /v1/services/{id}/reviews', 'GET /v1/media/{id}', 'POST /v1/quote', 'GET /v1/providers/{id}', 'GET /v1/help',
 ]);
 
 interface Route { method: string; path: string; url: string }

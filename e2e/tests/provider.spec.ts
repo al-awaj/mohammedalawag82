@@ -136,7 +136,7 @@ test('a provider signs up, applies with documents, gets approved, lists a servic
   expect(blocks.rowCount).toBe(1);
 
   // Every provider screen loads without errors.
-  for (const p of ['/', '/notifications', '/services', '/calendar', '/policies', '/promotions', '/reviews', '/bookings', '/disputes', '/earnings', '/reports', '/documents', '/profile', '/onboarding']) {
+  for (const p of ['/', '/notifications', '/help', '/services', '/calendar', '/policies', '/promotions', '/reviews', '/bookings', '/disputes', '/earnings', '/reports', '/documents', '/profile', '/onboarding']) {
     await page.goto(`${PROVIDER}${p}`);
     await expect(page.locator('main h1'), p).toBeVisible();
     await page.waitForLoadState('networkidle');

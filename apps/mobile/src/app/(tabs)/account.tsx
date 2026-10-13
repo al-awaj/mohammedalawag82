@@ -26,6 +26,7 @@ export default function Account() {
         <Button variant="secondary" title={tr({ ar: 'النزاعات والشكاوى', en: 'Disputes & complaints' })} onPress={() => router.push('/disputes')} />
         <Button variant="secondary" testID="contact-support" title={tr({ ar: 'تواصل مع الدعم', en: 'Contact support' })} onPress={() => router.push('/disputes?new=1')} />
       </>}
+      <Button variant="secondary" testID="open-help" title={tr({ ar: 'المساعدة والأسئلة الشائعة', en: 'Help & FAQ' })} onPress={() => router.push('/help')} />
       <Button variant="secondary" testID="switch-lang" title={lang === 'ar' ? 'English' : 'العربية'} onPress={() => setLang(lang === 'ar' ? 'en' : 'ar')} />
       {Platform.OS !== 'web' && <P muted small>{tr({ ar: 'يُطبق اتجاه الواجهة الجديد بعد إعادة تشغيل التطبيق.', en: 'The new layout direction applies after restarting the app.' })}</P>}
       {user && <Button variant="danger" title={tr({ ar: 'تسجيل الخروج', en: 'Sign out' })} onPress={() => void signOut()} />}

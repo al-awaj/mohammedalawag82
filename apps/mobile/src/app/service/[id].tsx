@@ -10,7 +10,7 @@ import { Button, Card, Choice, colors, ErrorText, Field, H1, H2, Loading, Notice
 
 interface Service {
   id: string; title: Record<string, string>; description: Record<string, string>; city: string; basePrice: string; currency: string; requiresProviderApproval: boolean;
-  typeName: Record<string, string>; bookingMode: string; capacityMode: string; capacity: number | null; providerName: string | null; durationMinutes: number | null;
+  typeName: Record<string, string>; bookingMode: string; capacityMode: string; capacity: number | null; providerName: string | null; providerId: string | null; durationMinutes: number | null;
   cancellationPolicy: { description: Record<string, string>; depositRefundable: boolean } | null;
   packages: { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; inclusions: Record<string, string>[] | null; addOns: { code: string; name: Record<string, string>; price: string }[]; durationMinutes: number | null; terms: Record<string, string> | null }[];
   rentalItems: { id: string; sku: string; name: Record<string, string>; quantityTotal: number; pricePerDay: string | null; currency: string; securityDeposit: string | null; lateFeePerDay: string | null; damageTerms: Record<string, string> | null }[];
@@ -105,6 +105,7 @@ export default function ServiceScreen() {
       </>}
       <H1>{localized(svc.title, lang)}</H1>
       <P muted>{localized(svc.typeName, lang)} · {svc.city}{svc.providerName ? ` · ${svc.providerName}` : ''}{svc.rating.average ? ` · ★ ${svc.rating.average} (${svc.rating.count})` : ''}</P>
+      {svc.providerId && svc.providerName ? <Button variant="secondary" testID="open-provider" title={tr({ ar: `صفحة ${svc.providerName}`, en: `About ${svc.providerName}` })} onPress={() => router.push(`/provider/${svc.providerId}`)} /> : null}
       <P>{localized(svc.description, lang)}</P>
       {videos.length > 0 && <Row>{videos.map((v, i) => (
         <Button key={v.id} variant="secondary" title={`▶ ${tr({ ar: 'فيديو', en: 'Video' })} ${i + 1}`} onPress={() => void WebBrowser.openBrowserAsync(`${API_URL}${v.url}`)} />

@@ -25,6 +25,7 @@ export const NAV: NavGroup[] = [
   { label: { ar: 'عام', en: 'General' }, items: [
     { href: '/', label: { ar: 'لوحة المتابعة', en: 'Dashboard' } },
     { href: '/notifications', label: { ar: 'الإشعارات', en: 'Notifications' } },
+    { href: '/help', label: { ar: 'المساعدة', en: 'Help' } },
   ] },
   { label: { ar: 'خدماتي', en: 'My services' }, items: [
     { href: '/services', label: { ar: 'الخدمات والباقات', en: 'Services & packages' } },

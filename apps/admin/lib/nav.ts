@@ -41,6 +41,7 @@ export const NAV: NavGroup[] = [
     { href: '/users', label: { ar: 'المستخدمون', en: 'Users' }, perm: 'users.view' },
     { href: '/staff', label: { ar: 'الموظفون والأدوار', en: 'Staff & roles' }, perm: ['users.view', 'roles.view'] },
     { href: '/reference', label: { ar: 'الدول والعملات والشروط', en: 'Countries, currencies, terms' }, perm: ['countries.manage', 'currencies.manage', 'exchange_rates.manage', 'terms.manage'] },
+    { href: '/help', label: { ar: 'المساعدة والأسئلة الشائعة', en: 'Help & FAQ' }, perm: 'content.manage' },
     { href: '/settings', label: { ar: 'الإعدادات', en: 'Settings' }, perm: 'settings.view' },
     { href: '/audit', label: { ar: 'سجل التدقيق', en: 'Audit log' }, perm: 'audit.view' },
   ] },

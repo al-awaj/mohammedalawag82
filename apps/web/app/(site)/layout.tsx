@@ -10,7 +10,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
       <main className="site-main">{children}</main>
       <footer className="site-footer">
         <p>{v.lang === 'ar' ? 'الأسعار المعروضة هي ما يدفعه العميل، دون رسوم منصة إضافية.' : 'Prices shown are what the customer pays, with no extra platform fee.'}</p>
-        <a href="/terms">{v.lang === 'ar' ? 'شروط الاستخدام' : 'Terms of use'}</a> · <a href="/terms?kind=privacy_policy">{v.lang === 'ar' ? 'سياسة الخصوصية' : 'Privacy policy'}</a>
+        <a href="/help">{v.lang === 'ar' ? 'المساعدة' : 'Help'}</a> · <a href="/terms">{v.lang === 'ar' ? 'شروط الاستخدام' : 'Terms of use'}</a> · <a href="/terms?kind=privacy_policy">{v.lang === 'ar' ? 'سياسة الخصوصية' : 'Privacy policy'}</a>
       </footer>
     </>
   );

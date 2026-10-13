@@ -32,7 +32,7 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
       <div>
         <h1>{localized(s.title, lang)}</h1>
         <p className="muted">
-          {localized(s.typeName, lang)} · {s.city}{s.providerName ? ` · ${s.providerName}` : ''}
+          {localized(s.typeName, lang)} · {s.city}{s.providerName && <> · {s.providerId ? <a href={`/providers/${s.providerId}`} data-testid="provider-link">{s.providerName}</a> : s.providerName}</>}
           {s.rating.average && <> · <span className="stars">★</span> {s.rating.average} ({s.rating.count})</>}
         </p>
         {images.length > 0 && <div className="gallery">{images.map((m) => <img key={m.id} src={`/bff${m.url}`} alt={m.caption ? localized(m.caption, lang) : ''} loading="lazy" />)}</div>}

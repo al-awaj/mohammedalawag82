@@ -30,6 +30,7 @@ import { auditRoutes } from './modules/audit/routes.js';
 import { catalogAdminRoutes } from './modules/catalog/admin-routes.js';
 import { catalogProviderRoutes } from './modules/catalog/provider-routes.js';
 import { catalogPublicRoutes } from './modules/catalog/public-routes.js';
+import { helpRoutes } from './modules/help/routes.js';
 import { availabilityRoutes } from './modules/availability/routes.js';
 import { bookingRoutes } from './modules/booking/routes.js';
 import { financeRoutes } from './modules/finance/routes.js';
@@ -154,6 +155,7 @@ export async function buildApp(config: Config, db: Db) {
     await reportRoutes(v1, deps);
     await documentRoutes(v1, deps);
     await reconciliationRoutes(v1, deps);
+    await helpRoutes(v1, deps);
   }, { prefix: '/v1' });
 
   return app;
