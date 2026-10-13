@@ -17,7 +17,8 @@ import type { Db } from './db/pool.js';
 import { makeAuthenticate } from './auth/guard.js';
 import { AppError } from './lib/errors.js';
 import { pickLang, t, type Lang } from './lib/i18n.js';
-import { LocalStorage } from './lib/storage.js';
+import { createStorage, S3Storage } from './lib/storage.js';
+import { pendingMigrations } from './db/migrate.js';
 import { TokenService } from './lib/tokens.js';
 import type { Deps } from './deps.js';
 import { authRoutes } from './modules/auth/routes.js';
@@ -104,13 +105,31 @@ export async function buildApp(config: Config, db: Db) {
     config,
     db,
     tokens,
-    storage: new LocalStorage(config.STORAGE_DIR, config.MAX_UPLOAD_BYTES, config.MAX_VIDEO_BYTES),
+    storage: createStorage(config),
     authenticate: makeAuthenticate(db, tokens),
   };
 
+  // Liveness: the process answers and reaches the database.
   app.get('/health', { schema: { hide: true } }, async () => {
     await db.query('SELECT 1');
     return { status: 'ok' };
+  });
+
+  // Readiness: schema up to date and file storage reachable; a load balancer sends traffic only then.
+  app.get('/ready', { schema: { hide: true } }, async (_req, reply) => {
+    const checks: Record<string, string> = {};
+    try { await db.query('SELECT 1'); checks.database = 'ok'; } catch { checks.database = 'unreachable'; }
+    if (checks.database === 'ok') {
+      const pending = await pendingMigrations(db);
+      checks.migrations = pending.length ? `pending: ${pending.join(', ')}` : 'ok';
+    }
+    try {
+      const s = deps.storage;
+      if (s instanceof S3Storage) await s.ping();
+      checks.storage = 'ok';
+    } catch { checks.storage = 'unreachable'; }
+    const ok = Object.values(checks).every((v) => v === 'ok');
+    return reply.status(ok ? 200 : 503).send({ status: ok ? 'ready' : 'not_ready', checks });
   });
 
   await app.register(async (v1) => {

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { localized, type Lang } from '@events/shared';
 import { useApp, useGet, useSession, useTr } from '@events/web-kit/client';
 import { LangSwitch } from '@events/web-kit/ui';
+import { BRAND } from './brand';
 
 export function Header({ countries, current }: { countries: { code: string; name: Record<string, string> }[]; current: string | null }) {
   const tr = useTr();
@@ -15,7 +16,7 @@ export function Header({ countries, current }: { countries: { code: string; name
   return (
     <header className="site-header">
       <div className="site-header-inner">
-        <Link href="/" className="logo">{tr({ ar: 'مناسبات', en: 'Occasions' })}</Link>
+        <Link href="/" className="logo">{tr(BRAND)}</Link>
         <Link href="/search">{tr({ ar: 'تصفح الخدمات', en: 'Browse services' })}</Link>
         <div className="grow" />
         {countries.length > 1 && (

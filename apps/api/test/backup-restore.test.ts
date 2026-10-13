@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { createPool } from '../src/db/pool.js';
+import { LocalStorage } from '../src/lib/storage.js';
 import { backup, restore, RestoreError } from '../src/ops/backup.js';
 import { PASSWORD, useApp } from './helpers.js';
 import { marketplace } from './fixtures.js';
@@ -14,6 +15,8 @@ import { marketplace } from './fixtures.js';
 /** Backup and restore (test 40, clause 80): a restored copy is complete, verified and usable. */
 const ctx = useApp();
 const config = loadConfig();
+const local = (dir: string) => new LocalStorage(dir, config.MAX_UPLOAD_BYTES, config.MAX_VIDEO_BYTES);
+const source = () => local(config.STORAGE_DIR);
 const restoreUrl = config.DATABASE_URL.replace(/\/[^/?]+(\?|$)/, '/events_restore_test$1');
 let work = '';
 let owner: { email: string; token: string };
@@ -55,17 +58,17 @@ describe('backup and restore', () => {
   let backupDir = '';
 
   it('restores into an empty database and proves the copy matches, balances and is usable', async () => {
-    const b = await backup({ databaseUrl: config.DATABASE_URL, storageDir: config.STORAGE_DIR, outDir: path.join(work, 'backups') });
+    const b = await backup({ databaseUrl: config.DATABASE_URL, storage: source(), outDir: path.join(work, 'backups') });
     backupDir = b.dir;
     expect(b.manifest.fingerprint.tables.journal_lines).toBeGreaterThan(0);
     expect(b.manifest.fingerprint.storageFiles).toBeGreaterThan(0);
 
     await freshDatabase();
     const storage = path.join(work, 'restored-storage');
-    const r = await restore({ backupDir, databaseUrl: restoreUrl, storageDir: storage });
+    const r = await restore({ backupDir, databaseUrl: restoreUrl, storage: local(storage) });
     expect(r.ok).toBe(true);
     expect(r.fingerprint.tables).toEqual(b.manifest.fingerprint.tables);
-    expect(r.consistency.ok).toBe(true);
+    expect(r.fingerprint.consistency).toEqual(b.manifest.fingerprint.consistency);
 
     // The application runs on the restored copy: sign-in, records, documents and files all work.
     const db = createPool(restoreUrl);
@@ -90,7 +93,7 @@ describe('backup and restore', () => {
   });
 
   it('refuses to restore over a database that is not empty', async () => {
-    await expect(restore({ backupDir, databaseUrl: restoreUrl, storageDir: path.join(work, 'other-storage') })).rejects.toThrow(/not empty/);
+    await expect(restore({ backupDir, databaseUrl: restoreUrl, storage: local(path.join(work, 'other-storage')) })).rejects.toThrow(/not empty/);
   });
 
   it('detects a damaged or altered backup before touching the target', async () => {
@@ -101,7 +104,7 @@ describe('backup and restore', () => {
     bytes[bytes.length - 10] = bytes[bytes.length - 10]! ^ 0xff;
     await writeFile(dump, bytes);
     await freshDatabase();
-    const err = await restore({ backupDir: copy, databaseUrl: restoreUrl, storageDir: path.join(work, 'tampered-storage') }).catch((e: unknown) => e);
+    const err = await restore({ backupDir: copy, databaseUrl: restoreUrl, storage: local(path.join(work, 'tampered-storage')) }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(RestoreError);
     expect((err as Error).message).toMatch(/checksum mismatch for db\.dump/);
     const c = new pg.Client({ connectionString: restoreUrl });
@@ -112,7 +115,7 @@ describe('backup and restore', () => {
 
   it('keeps only the configured number of backups', async () => {
     const out = path.join(work, 'rotating');
-    for (let i = 0; i < 3; i++) await backup({ databaseUrl: config.DATABASE_URL, storageDir: config.STORAGE_DIR, outDir: out, keep: 2 });
+    for (let i = 0; i < 3; i++) await backup({ databaseUrl: config.DATABASE_URL, storage: source(), outDir: out, keep: 2 });
     expect(await readdir(out)).toHaveLength(2);
   });
 });

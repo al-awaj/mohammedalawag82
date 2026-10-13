@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import pg from 'pg';
 import { createPool } from '../db/pool.js';
+import { type FileStore, LocalStorage } from '../lib/storage.js';
 import { consistencyChecks } from '../modules/reconciliation/service.js';
 
 const run = promisify(execFile);
@@ -13,7 +14,7 @@ const run = promisify(execFile);
 /**
  * Backup and restore (clause 80). A backup is a directory holding:
  *   db.dump        pg_dump custom-format archive (schema + data, no owners/privileges)
- *   storage.tar.gz the uploaded files (media, documents, proofs)
+ *   storage.tar.gz the uploaded files (media, documents, proofs), from local disk or an S3 bucket
  *   manifest.json  checksums of both, the schema version and a fingerprint of the data
  * Restore checks the checksums, loads into an empty database, unpacks the files and then proves the
  * restored copy matches the fingerprint and that the books still balance.
@@ -23,6 +24,10 @@ export interface Fingerprint {
   tables: Record<string, number>;
   ledger: { currency: string; entries: number; debit: string; credit: string }[];
   storageFiles: number;
+  /** sha256 of the sorted list of stored keys: the same files, not just the same number. */
+  storageKeys: string;
+  /** Issues found by the ledger consistency checks at backup time (a faithful copy has exactly these). */
+  consistency: Record<string, number>;
 }
 
 export interface Manifest {
@@ -39,15 +44,25 @@ async function sha256(file: string) {
   return { sha256: h.digest('hex'), bytes };
 }
 
-async function countFiles(dir: string): Promise<number> {
-  if (!existsSync(dir)) return 0;
-  let n = 0;
-  for (const e of await readdir(dir, { withFileTypes: true, recursive: true })) if (e.isFile()) n++;
-  return n;
+async function storageIndex(storage: FileStore) {
+  const keys: string[] = [];
+  for await (const k of storage.keys()) keys.push(k);
+  keys.sort();
+  return { keys, digest: createHash('sha256').update(keys.join('\n')).digest('hex') };
+}
+
+async function consistencyCounts(databaseUrl: string) {
+  const pool = createPool(databaseUrl);
+  try {
+    const r = await consistencyChecks(pool, null, null);
+    return Object.fromEntries(Object.entries(r.checks).map(([k, v]) => [k, v.length]));
+  } finally {
+    await pool.end();
+  }
 }
 
 /** What must be identical between the source and a restored copy. */
-export async function fingerprint(databaseUrl: string, storageDir: string): Promise<Fingerprint> {
+export async function fingerprint(databaseUrl: string, storage: FileStore): Promise<Fingerprint> {
   const c = new pg.Client({ connectionString: databaseUrl });
   await c.connect();
   try {
@@ -58,24 +73,38 @@ export async function fingerprint(databaseUrl: string, storageDir: string): Prom
     const ledger = (await c.query<{ currency: string; entries: number; debit: string; credit: string }>(
       `SELECT l.currency_code AS currency, count(DISTINCT l.entry_id)::int AS entries, sum(l.debit)::text AS debit, sum(l.credit)::text AS credit
          FROM journal_lines l GROUP BY l.currency_code ORDER BY l.currency_code`)).rows;
-    return { schemaVersion, tables, ledger, storageFiles: await countFiles(storageDir) };
+    const idx = await storageIndex(storage);
+    return { schemaVersion, tables, ledger, storageFiles: idx.keys.length, storageKeys: idx.digest, consistency: await consistencyCounts(databaseUrl) };
   } finally {
     await c.end();
   }
 }
 
-/** Writes a consistent backup of the database and the storage directory into `outDir/<timestamp>`. */
-export async function backup(opts: { databaseUrl: string; storageDir: string; outDir: string; keep?: number }) {
+/** Writes a consistent backup of the database and the file storage into `outDir/<timestamp>`. */
+export async function backup(opts: { databaseUrl: string; storage: FileStore; outDir: string; keep?: number }) {
   const dir = path.join(opts.outDir, new Date().toISOString().replace(/[:.]/g, '-'));
   await mkdir(dir, { recursive: true });
   // The fingerprint is taken first; pg_dump runs in one snapshot and the platform only appends to the
   // financial tables, so a quiet system (maintenance window) is required for an exact match.
-  const fp = await fingerprint(opts.databaseUrl, opts.storageDir);
+  const fp = await fingerprint(opts.databaseUrl, opts.storage);
   await run('pg_dump', ['--format=custom', '--no-owner', '--no-privileges', '--file', path.join(dir, 'db.dump'), opts.databaseUrl], { maxBuffer: 1 << 26 });
-  if (existsSync(opts.storageDir)) {
-    await run('tar', ['-czf', path.join(dir, 'storage.tar.gz'), '-C', path.resolve(opts.storageDir), '.']);
+  const archive = path.join(dir, 'storage.tar.gz');
+  if (opts.storage instanceof LocalStorage) {
+    if (existsSync(opts.storage.root)) await run('tar', ['-czf', archive, '-C', path.resolve(opts.storage.root), '.']);
+    else await run('tar', ['-czf', archive, '--files-from', '/dev/null']);
   } else {
-    await run('tar', ['-czf', path.join(dir, 'storage.tar.gz'), '--files-from', '/dev/null']);
+    // Object storage: copy every object into a staging folder, archive it, then remove the copy.
+    const stage = await mkdtemp(path.join(opts.outDir, '.staging-'));
+    try {
+      for await (const key of opts.storage.keys()) {
+        const target = path.join(stage, key);
+        await mkdir(path.dirname(target), { recursive: true });
+        await writeFile(target, await opts.storage.get(key));
+      }
+      await run('tar', ['-czf', archive, '-C', stage, '.']);
+    } finally {
+      await rm(stage, { recursive: true, force: true });
+    }
   }
   const manifest: Manifest = {
     format: 1, createdAt: new Date().toISOString(),
@@ -96,10 +125,10 @@ async function prune(outDir: string, keep: number) {
 export class RestoreError extends Error {}
 
 /**
- * Restores a backup into an EMPTY database and storage directory, then verifies it. Throws
+ * Restores a backup into an EMPTY database and EMPTY file storage, then verifies it. Throws
  * RestoreError on a checksum mismatch, a non-empty target or any verification difference.
  */
-export async function restore(opts: { backupDir: string; databaseUrl: string; storageDir: string }) {
+export async function restore(opts: { backupDir: string; databaseUrl: string; storage: FileStore }) {
   const manifest = JSON.parse(await readFile(path.join(opts.backupDir, 'manifest.json'), 'utf8')) as Manifest;
   if (manifest.format !== 1) throw new RestoreError(`unsupported backup format ${manifest.format}`);
   for (const [name, want] of Object.entries(manifest.files)) {
@@ -115,33 +144,44 @@ export async function restore(opts: { backupDir: string; databaseUrl: string; st
   } finally {
     await c.end();
   }
-  if (existsSync(opts.storageDir) && (await readdir(opts.storageDir)).length > 0) throw new RestoreError('the target storage directory is not empty');
+  for await (const _ of opts.storage.keys()) throw new RestoreError('the target file storage is not empty');
 
   await run('pg_restore', ['--no-owner', '--no-privileges', '--exit-on-error', '--single-transaction', '--dbname', opts.databaseUrl, path.join(opts.backupDir, 'db.dump')], { maxBuffer: 1 << 26 });
-  await mkdir(opts.storageDir, { recursive: true });
-  await run('tar', ['-xzf', path.join(opts.backupDir, 'storage.tar.gz'), '-C', path.resolve(opts.storageDir)]);
-  return verify(manifest, opts.databaseUrl, opts.storageDir);
+  const archive = path.join(opts.backupDir, 'storage.tar.gz');
+  if (opts.storage instanceof LocalStorage) {
+    await mkdir(opts.storage.root, { recursive: true });
+    await run('tar', ['-xzf', archive, '-C', path.resolve(opts.storage.root)]);
+  } else {
+    const stage = await mkdtemp(path.join(opts.backupDir, '.restore-'));
+    try {
+      await run('tar', ['-xzf', archive, '-C', stage]);
+      for (const e of await readdir(stage, { withFileTypes: true, recursive: true })) {
+        if (!e.isFile()) continue;
+        const full = path.join(e.parentPath, e.name);
+        await opts.storage.put(path.relative(stage, full).split(path.sep).join('/'), await readFile(full));
+      }
+    } finally {
+      await rm(stage, { recursive: true, force: true });
+    }
+  }
+  return verify(manifest, opts.databaseUrl, opts.storage);
 }
 
 /** Compares a restored copy with the manifest and re-runs the ledger consistency checks. */
-export async function verify(manifest: Manifest, databaseUrl: string, storageDir: string) {
-  const fp = await fingerprint(databaseUrl, storageDir);
+export async function verify(manifest: Manifest, databaseUrl: string, storage: FileStore) {
+  const fp = await fingerprint(databaseUrl, storage);
   const differences: string[] = [];
   if (fp.schemaVersion !== manifest.fingerprint.schemaVersion) differences.push(`schema ${fp.schemaVersion} != ${manifest.fingerprint.schemaVersion}`);
   for (const [t, n] of Object.entries(manifest.fingerprint.tables)) if (fp.tables[t] !== n) differences.push(`${t}: ${fp.tables[t] ?? 'missing'} rows != ${n}`);
   if (JSON.stringify(fp.ledger) !== JSON.stringify(manifest.fingerprint.ledger)) differences.push('ledger totals differ');
   if (fp.storageFiles !== manifest.fingerprint.storageFiles) differences.push(`storage files ${fp.storageFiles} != ${manifest.fingerprint.storageFiles}`);
+  else if (fp.storageKeys !== manifest.fingerprint.storageKeys) differences.push('stored file names differ');
   const unbalanced = fp.ledger.filter((l) => l.debit !== l.credit).map((l) => l.currency);
   if (unbalanced.length) differences.push(`ledger does not balance in ${unbalanced.join(', ')}`);
 
-  const pool = createPool(databaseUrl);
-  let checks;
-  try {
-    checks = await consistencyChecks(pool, null, null);
-  } finally {
-    await pool.end();
-  }
-  if (!checks.ok) differences.push(`${checks.issues} consistency issue(s): ${Object.entries(checks.checks).filter(([, v]) => v.length).map(([k]) => k).join(', ')}`);
+  if (JSON.stringify(fp.consistency) !== JSON.stringify(manifest.fingerprint.consistency)) differences.push('ledger consistency checks differ from the source');
   if (differences.length) throw new RestoreError(`restored copy does not match the backup:\n- ${differences.join('\n- ')}`);
-  return { ok: true as const, fingerprint: fp, consistency: checks };
+  // Issues already present in the source are carried over faithfully and reported, not hidden.
+  const warnings = Object.entries(fp.consistency).filter(([, n]) => n > 0).map(([k, n]) => `${k}: ${n} (already in the source)`);
+  return { ok: true as const, fingerprint: fp, warnings };
 }

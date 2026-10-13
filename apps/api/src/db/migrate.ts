@@ -44,3 +44,10 @@ export async function migrate(db: Db, dir = MIGRATIONS_DIR): Promise<string[]> {
   }
   return ran;
 }
+
+/** Migration files not yet applied (readiness: the app must not serve an outdated schema). */
+export async function pendingMigrations(db: Db, dir = MIGRATIONS_DIR): Promise<string[]> {
+  const files = (await readdir(dir)).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort();
+  const applied = new Set((await db.query<{ name: string }>('SELECT name FROM schema_migrations').catch(() => ({ rows: [] }))).rows.map((r) => r.name));
+  return files.filter((f) => !applied.has(f));
+}
