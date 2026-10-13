@@ -22,6 +22,7 @@ export default function Login() {
         try { await signIn(identifier.trim(), password); router.back(); } catch (e) { setError(e); } finally { setBusy(false); }
       }} />
       <Button variant="secondary" title={tr({ ar: 'إنشاء حساب', en: 'Create an account' })} onPress={() => router.replace('/register')} />
+      <Button variant="secondary" title={tr({ ar: 'نسيت كلمة المرور؟', en: 'Forgot your password?' })} onPress={() => router.push('/forgot')} />
     </Screen>
   );
 }

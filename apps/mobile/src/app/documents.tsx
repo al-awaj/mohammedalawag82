@@ -1,5 +1,5 @@
 import { Text } from 'react-native';
-import { Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { enumLabel, formatDateTime } from '@events/shared';
 import { useGet, useSession } from '../lib/session';
 import { useTr } from '../lib/i18n';
@@ -18,10 +18,10 @@ function List() {
   return (
     <Screen>
       <Stack.Screen options={{ title: tr({ ar: 'الفواتير والإيصالات', en: 'Invoices & receipts' }) }} />
-      <P muted small>{tr({ ar: 'للطباعة استخدم الموقع الإلكتروني.', en: 'Use the website to print documents.' })}</P>
+      <P muted small>{tr({ ar: 'اضغط على المستند لعرضه أو طباعته أو حفظه PDF.', en: 'Tap a document to view, print or save it as PDF.' })}</P>
       <ErrorText error={q.error} />
       {q.isLoading ? <Loading /> : !q.data?.length ? <Empty>{tr({ ar: 'لا توجد مستندات', en: 'No documents' })}</Empty> : q.data.map((d) => (
-        <Card key={d.id} testID={`doc-${d.number}`}>
+        <Card key={d.id} testID={`doc-${d.number}`} onPress={() => router.push({ pathname: '/document/[id]', params: { id: d.id, title: d.number } })}>
           <Text style={{ fontWeight: '600' }}>{enumLabel('document', d.kind, lang)} · {d.number}</Text>
           <Money amount={d.total} currency={d.currency} />
           <P muted small>{formatDateTime(d.issuedAt, lang)}</P>

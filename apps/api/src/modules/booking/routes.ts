@@ -9,7 +9,7 @@ import { idParams, paginationQuery, reasonSchema } from '../common.js';
 import { providerOf } from '../catalog/shared.js';
 import { identityVisible } from '../catalog/queries.js';
 import { itemInput, quote } from './pricing.js';
-import { addToCart, checkout, OCCUPYING, previewCoupon, providerDecision, providerExecution, viewCart } from './service.js';
+import { addToCart, assertOwnEvent, checkEventBudget, checkout, OCCUPYING, previewCoupon, providerDecision, providerExecution, viewCart } from './service.js';
 import { cancelBooking, decideCancellationRequest, markNoShow, quoteCancellation } from './cancellation.js';
 
 const sec = [{ bearer: [] }];
@@ -108,6 +108,39 @@ function totalsByCurrency(rows: { currency: string; total: string; upfrontAmount
 export async function bookingRoutes(app: App, deps: Deps) {
   const { db } = deps;
   const customer = { onRequest: deps.authenticate, preValidation: requireKind('customer') };
+
+  /** One event with its bookings, totals per currency and budget position; scoped to a customer or to staff countries. */
+  async function loadEvent(id: string, customerId: string | null, countries: string[] | null) {
+    const e = (await db.query(
+      `SELECT e.id, e.name, e.event_type AS "eventType", co.code AS "countryCode", e.country_id AS "_countryId", e.city, e.location, e.latitude, e.longitude,
+              e.event_date AS "eventDate", e.starts_at AS "startsAt", e.ends_at AS "endsAt", e.expected_guests AS "expectedGuests",
+              e.budget_amount AS "budgetAmount", e.budget_currency AS "budgetCurrency", e.notes, e.status, e.created_at AS "createdAt",
+              u.full_name AS "_customerName", u.phone AS "_customerPhone", u.id AS "_customerId"
+         FROM events e JOIN countries co ON co.id = e.country_id JOIN users u ON u.id = e.customer_id
+        WHERE e.id = $1 AND ($2::uuid IS NULL OR e.customer_id = $2) AND ($3::uuid[] IS NULL OR e.country_id = ANY($3))`,
+      [id, customerId, countries])).rows[0];
+    if (!e) return null;
+    const { _countryId: _c, _customerName: customerName, _customerPhone: customerPhone, _customerId: cid, ...pub } = e;
+    const bookings = (await db.query(`${bookingSelect('customer')} WHERE b.event_id = $1 ORDER BY b.start_at`, [e.id])).rows as { id: string; number: string; status: string; serviceTitle: unknown; startAt: Date; total: string; upfrontAmount: string; paidAmount: string; remainingAmount: string; currency: string }[];
+    const totals = totalsByCurrency(bookings);
+    const inBudgetCurrency = e.budgetCurrency ? totals[e.budgetCurrency] : undefined;
+    return {
+      ...pub,
+      ...(customerId ? {} : { customer: { id: cid, name: customerName, phone: customerPhone } }),
+      // The event status is independent from each booking's status (clause 25).
+      bookings: bookings.map((b) => ({ id: b.id, number: b.number, status: b.status, serviceTitle: b.serviceTitle, startAt: b.startAt, total: b.total,
+        upfrontAmount: b.upfrontAmount, paidAmount: b.paidAmount, remainingAmount: b.remainingAmount, currency: b.currency })),
+      totals,
+      budget: e.budgetAmount ? {
+        amount: e.budgetAmount, currency: e.budgetCurrency,
+        committed: inBudgetCurrency?.committedTotal ?? '0.0000',
+        remaining: fromUnits(toUnits(e.budgetAmount) - toUnits(inBudgetCurrency?.committedTotal ?? '0')),
+        overBudget: toUnits(inBudgetCurrency?.committedTotal ?? '0') > toUnits(e.budgetAmount),
+        // Bookings in other currencies are listed in `totals` and not converted implicitly.
+        otherCurrencies: Object.keys(totals).filter((k) => k !== e.budgetCurrency),
+      } : null,
+    };
+  }
   const provider = { onRequest: deps.authenticate, preValidation: requireKind('provider') };
 
   // ---------------- Events (clauses 24-25) ----------------
@@ -132,35 +165,30 @@ export async function bookingRoutes(app: App, deps: Deps) {
   app.get('/events', { ...customer, schema: { tags: ['events'], security: sec } }, async (req) =>
     (await db.query(
       `SELECT e.id, e.name, e.event_type AS "eventType", e.city, e.event_date AS "eventDate", e.status,
+              e.budget_amount AS "budgetAmount", e.budget_currency AS "budgetCurrency", e.expected_guests AS "expectedGuests",
               (SELECT count(*)::int FROM bookings b WHERE b.event_id = e.id) AS "bookingCount"
          FROM events e WHERE e.customer_id = $1 ORDER BY e.event_date`, [requireUser(req).id])).rows);
 
   app.get('/events/:id', { ...customer, schema: { tags: ['events'], security: sec, params: idParams } }, async (req) => {
-    const e = (await db.query(
-      `SELECT e.id, e.name, e.event_type AS "eventType", co.code AS "countryCode", e.city, e.location, e.latitude, e.longitude,
-              e.event_date AS "eventDate", e.starts_at AS "startsAt", e.ends_at AS "endsAt", e.expected_guests AS "expectedGuests",
-              e.budget_amount AS "budgetAmount", e.budget_currency AS "budgetCurrency", e.notes, e.status, e.created_at AS "createdAt"
-         FROM events e JOIN countries co ON co.id = e.country_id WHERE e.id = $1 AND e.customer_id = $2`, [req.params.id, requireUser(req).id])).rows[0];
+    const e = await loadEvent(req.params.id, requireUser(req).id, null);
     if (!e) throw notFound();
-    const bookings = (await db.query(`${bookingSelect('customer')} WHERE b.event_id = $1 ORDER BY b.start_at`, [e.id])).rows as { id: string; number: string; status: string; serviceTitle: unknown; startAt: Date; total: string; upfrontAmount: string; paidAmount: string; remainingAmount: string; currency: string }[];
-    const totals = totalsByCurrency(bookings);
-    const inBudgetCurrency = e.budgetCurrency ? totals[e.budgetCurrency] : undefined;
-    return {
-      ...e,
-      // The event status is independent from each booking's status (clause 25).
-      bookings: bookings.map((b) => ({ id: b.id, number: b.number, status: b.status, serviceTitle: b.serviceTitle, startAt: b.startAt, total: b.total,
-        upfrontAmount: b.upfrontAmount, paidAmount: b.paidAmount, remainingAmount: b.remainingAmount, currency: b.currency })),
-      totals,
-      budget: e.budgetAmount ? {
-        amount: e.budgetAmount, currency: e.budgetCurrency,
-        committed: inBudgetCurrency?.committedTotal ?? '0.0000',
-        remaining: fromUnits(toUnits(e.budgetAmount) - toUnits(inBudgetCurrency?.committedTotal ?? '0')),
-        overBudget: toUnits(inBudgetCurrency?.committedTotal ?? '0') > toUnits(e.budgetAmount),
-        // Bookings in other currencies are listed in `totals` and not converted implicitly.
-        otherCurrencies: Object.keys(totals).filter((k) => k !== e.budgetCurrency),
-      } : null,
-    };
+    return e;
   });
+
+  // Link or unlink one of the customer's bookings to one of their events (clause 25). Only the grouping
+  // changes; the booking's agreed snapshot stays as it is.
+  app.put('/bookings/:id/event', { ...customer, schema: { tags: ['events'], security: sec, params: idParams, body: z.object({ eventId: z.uuid().nullable() }) } }, async (req) =>
+    withTx(db, async (c) => {
+      const customerId = requireUser(req).id;
+      const b = (await c.query<{ event_id: string | null }>('SELECT event_id FROM bookings WHERE id = $1 AND customer_id = $2 FOR UPDATE', [req.params.id, customerId])).rows[0];
+      if (!b) throw notFound();
+      if (req.body.eventId) await assertOwnEvent(c, customerId, req.body.eventId);
+      await c.query('UPDATE bookings SET event_id = $2 WHERE id = $1', [req.params.id, req.body.eventId]);
+      await audit(c, actorOf(req), { action: req.body.eventId ? 'booking.event_linked' : 'booking.event_unlinked', entityType: 'booking', entityId: req.params.id,
+        before: { eventId: b.event_id }, after: { eventId: req.body.eventId } });
+      if (req.body.eventId) await checkEventBudget(c, [req.body.eventId]);
+      return { id: req.params.id, eventId: req.body.eventId };
+    }));
 
   app.patch('/events/:id', { ...customer, schema: { tags: ['events'], security: sec, params: idParams, body: eventFields.omit({ countryCode: true }).partial() } }, async (req) => {
     const b = req.body;
@@ -208,6 +236,15 @@ export async function bookingRoutes(app: App, deps: Deps) {
   app.post('/cart/coupon', {
     ...customer, schema: { tags: ['cart'], security: sec, body: z.object({ code: z.string().trim().min(3).max(30), itemIds: z.array(z.uuid()).max(50).optional() }) },
   }, async (req) => previewCoupon(db, requireUser(req).id, req.body.code, req.body.itemIds));
+
+  app.patch('/cart/items/:id', { ...customer, schema: { tags: ['cart'], security: sec, params: idParams, body: z.object({ eventId: z.uuid().nullable() }) } }, async (req) =>
+    withTx(db, async (c) => {
+      const customerId = requireUser(req).id;
+      if (req.body.eventId) await assertOwnEvent(c, customerId, req.body.eventId);
+      const r = await c.query('UPDATE cart_items SET event_id = $3 WHERE id = $1 AND customer_id = $2', [req.params.id, customerId, req.body.eventId]);
+      if (!r.rowCount) throw notFound();
+      return { id: req.params.id, eventId: req.body.eventId };
+    }));
 
   app.delete('/cart/items/:id', { ...customer, schema: { tags: ['cart'], security: sec, params: idParams } }, async (req, reply) => {
     const r = await db.query('DELETE FROM cart_items WHERE id = $1 AND customer_id = $2', [req.params.id, requireUser(req).id]);
@@ -334,6 +371,33 @@ export async function bookingRoutes(app: App, deps: Deps) {
   });
 
   // ---------------- Admin ----------------
+  // ---------------- Admin: events (clause 7) ----------------
+  app.get('/admin/events', {
+    onRequest: deps.authenticate, preValidation: requirePermission('bookings.view'),
+    schema: { tags: ['admin:bookings'], security: sec, querystring: paginationQuery.extend({ status: z.enum(['planning', 'confirmed', 'completed', 'cancelled']).optional(),
+      from: z.iso.date().optional(), to: z.iso.date().optional(), q: z.string().trim().max(100).optional() }) },
+  }, async (req) => {
+    const q = req.query;
+    return (await db.query(
+      `SELECT e.id, e.name, e.event_type AS "eventType", co.code AS "countryCode", e.city, e.event_date AS "eventDate", e.status,
+              e.budget_amount AS "budgetAmount", e.budget_currency AS "budgetCurrency", u.full_name AS "customerName",
+              (SELECT count(*)::int FROM bookings b WHERE b.event_id = e.id) AS "bookingCount"
+         FROM events e JOIN countries co ON co.id = e.country_id JOIN users u ON u.id = e.customer_id
+        WHERE ($1::uuid[] IS NULL OR e.country_id = ANY($1)) AND ($2::text IS NULL OR e.status = $2)
+          AND ($3::date IS NULL OR e.event_date >= $3) AND ($4::date IS NULL OR e.event_date <= $4)
+          AND ($5::text IS NULL OR e.name ILIKE '%' || $5 || '%' OR u.full_name ILIKE '%' || $5 || '%')
+        ORDER BY e.event_date DESC, e.id LIMIT $6 OFFSET $7`,
+      [countryScope(requireUser(req), 'bookings.view'), q.status ?? null, q.from ?? null, q.to ?? null, q.q ?? null, q.limit, q.offset])).rows;
+  });
+
+  app.get('/admin/events/:id', {
+    onRequest: deps.authenticate, preValidation: requirePermission('bookings.view'), schema: { tags: ['admin:bookings'], security: sec, params: idParams },
+  }, async (req) => {
+    const e = await loadEvent(req.params.id, null, countryScope(requireUser(req), 'bookings.view'));
+    if (!e) throw notFound();
+    return e;
+  });
+
   app.get('/admin/bookings', {
     onRequest: deps.authenticate, preValidation: requirePermission('bookings.view'),
     schema: {

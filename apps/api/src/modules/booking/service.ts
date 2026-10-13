@@ -178,7 +178,7 @@ export async function viewCart(db: Db, customerId: string) {
   }
 }
 
-async function assertOwnEvent(c: Executor, customerId: string, eventId: string) {
+export async function assertOwnEvent(c: Executor, customerId: string, eventId: string) {
   const e = await c.query(`SELECT 1 FROM events WHERE id = $1 AND customer_id = $2 AND status <> 'cancelled'`, [eventId, customerId]);
   if (!e.rowCount) throw badRequest('EVENT_NOT_FOUND');
 }
@@ -324,7 +324,7 @@ export async function checkout(db: Db, customerId: string, opts: { itemIds?: str
 }
 
 /** Notifies the customer once an event's committed cost passes its budget (same currency only). */
-async function checkEventBudget(c: Executor, eventIds: string[]) {
+export async function checkEventBudget(c: Executor, eventIds: string[]) {
   for (const id of eventIds) {
     const r = (await c.query<{ customer_id: string; over: boolean; name: string }>(
       `SELECT e.customer_id, e.name, coalesce((SELECT sum(b.total) FROM bookings b WHERE b.event_id = e.id AND b.currency_code = e.budget_currency

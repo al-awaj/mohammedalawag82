@@ -32,3 +32,8 @@
 .slots { display: flex; flex-wrap: wrap; gap: 6px; }
 .stars { color: #f5a524; letter-spacing: 1px; }
 .account-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+
+/* Event budget gauge: share of the budget committed by bookings in the budget currency. */
+.budget-bar { height: 10px; border-radius: 999px; background: var(--neutral-soft); overflow: hidden; margin-block: 10px 4px; }
+.budget-bar > span { display: block; height: 100%; background: var(--primary); border-radius: inherit; }
+.budget-bar > span.over { background: var(--bad); }

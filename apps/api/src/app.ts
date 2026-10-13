@@ -56,6 +56,8 @@ export async function buildApp(config: Config, db: Db) {
   await app.register(cors, {
     origin: config.CORS_ORIGINS ? config.CORS_ORIGINS.split(',').map((s) => s.trim()) : false,
     credentials: true,
+    // The default is GET/HEAD/POST only; the app also edits (PATCH/PUT) and removes (DELETE).
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
   });
   if (config.RATE_LIMIT_ENABLED) {
     await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });

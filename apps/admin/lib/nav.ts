@@ -14,6 +14,7 @@ export const NAV: NavGroup[] = [
   ] },
   { label: { ar: 'الحجوزات', en: 'Bookings' }, items: [
     { href: '/bookings', label: { ar: 'الحجوزات', en: 'Bookings' }, perm: 'bookings.view' },
+    { href: '/events', label: { ar: 'المناسبات', en: 'Events' }, perm: 'bookings.view' },
     { href: '/calendar', label: { ar: 'التقويم', en: 'Calendar' }, perm: 'bookings.view' },
     { href: '/cancellation-requests', label: { ar: 'طلبات الإلغاء', en: 'Cancellation requests' }, perm: 'bookings.cancel' },
     { href: '/disputes', label: { ar: 'النزاعات والشكاوى', en: 'Disputes & complaints' }, perm: 'disputes.view' },

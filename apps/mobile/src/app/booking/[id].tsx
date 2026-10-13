@@ -6,9 +6,10 @@ import { api } from '../../lib/api';
 import { useAction, useGet, useSession } from '../../lib/session';
 import { useTr } from '../../lib/i18n';
 import { RequireLogin } from '../../components/require-login';
+import { EventPicker } from '../../components/event-picker';
 import { Badge, Button, Card, ErrorText, Field, H2, Loading, Money, Notice, P, Row, Screen } from '../../components/ui';
 
-type Booking = { id: string; number: string; orderId: string; status: string; serviceTitle: Record<string, string>; startAt: string; endAt: string; total: string; paidAmount: string; remainingAmount: string; currency: string; providerName: string | null; cancellationPolicy: { description: Record<string, string> } | null };
+type Booking = { id: string; number: string; orderId: string; status: string; serviceTitle: Record<string, string>; startAt: string; endAt: string; total: string; paidAmount: string; remainingAmount: string; currency: string; providerName: string | null; cancellationPolicy: { description: Record<string, string> } | null; eventId: string | null };
 type Preview = { mode: string; refund: string; retained: string };
 
 export default function BookingScreen() {
@@ -44,6 +45,7 @@ function BookingView() {
         <Text>{tr({ ar: 'المدفوع', en: 'Paid' })}: <Money amount={d.paidAmount} currency={d.currency} /></Text>
         <Text>{tr({ ar: 'المتبقي', en: 'Remaining' })}: <Money amount={d.remainingAmount} currency={d.currency} /></Text>
       </Card>
+      <EventPicker value={d.eventId} path={`/v1/bookings/${d.id}/event`} />
       {d.cancellationPolicy && <Card><H2>{tr({ ar: 'سياسة الإلغاء', en: 'Cancellation policy' })}</H2><P>{localized(d.cancellationPolicy.description, lang)}</P></Card>}
       <ErrorText error={act.error} />
       <Row>

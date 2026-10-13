@@ -66,6 +66,29 @@ export function Money({ amount, currency }: { amount: string | null | undefined;
   return <Text style={s.money}>{formatMoney(amount, currency)}</Text>;
 }
 
+/** Single choice among a few options, shown as chips (no native picker needed on any platform). */
+export function Choice<T extends string>({ label, value, options, onChange, testID }: {
+  label?: string; value: T | null; options: { value: T; label: string }[]; onChange: (v: T | null) => void; testID?: string;
+}) {
+  return (
+    <View style={{ gap: 6, marginBottom: 6 }}>
+      {label ? <Text style={s.label}>{label}</Text> : null}
+      <View style={s.row}>
+        {options.map((o) => {
+          const on = o.value === value;
+          return (
+            <Pressable key={o.value} testID={testID ? `${testID}-${o.value}` : undefined} accessibilityRole="button" accessibilityState={{ selected: on }}
+              onPress={() => onChange(on ? null : o.value)}
+              style={[s.chip, on && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+              <Text style={{ color: on ? '#fff' : colors.text, fontSize: 14 }}>{o.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 const TONE: Record<string, string> = { confirmed: 'ok', completed: 'ok', succeeded: 'ok', paid: 'ok', failed: 'bad', rejected: 'bad', expired: 'bad', cancelled_by_customer: 'bad', cancelled_by_provider: 'bad', cancelled_by_admin: 'bad', cancelled: 'bad' };
 export function Badge({ group, value }: { group: string; value: string | null | undefined }) {
   const { lang } = useSession();
@@ -97,5 +120,6 @@ const s = StyleSheet.create({
   notice: { borderRadius: 10, padding: 10 },
   empty: { padding: 24, alignItems: 'center', borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border, borderRadius: 12 },
   money: { fontWeight: '700', color: colors.text, writingDirection: 'ltr' },
+  chip: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   badge: { alignSelf: 'flex-start', backgroundColor: '#eef0f4', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 2 },
 });

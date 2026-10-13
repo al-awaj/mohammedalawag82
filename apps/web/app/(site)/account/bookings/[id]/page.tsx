@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { use } from 'react';
 import { formatMoney, localized } from '@events/shared';
 import { useApp, useGet, useTr } from '@events/web-kit/client';
+import { EventPicker } from '@/lib/events';
 import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, disputeFields, ErrorBox, Loading, Money, Notice, Page } from '@events/web-kit/ui';
 
 interface Booking {
@@ -10,7 +11,7 @@ interface Booking {
   guests: number | null; addOns: { code: string; name: Record<string, string>; price: string }[]; subtotal: string; discountAmount: string; total: string; currency: string; upfrontAmount: string;
   balanceDueAt: string | null; paidAmount: string; remainingAmount: string; providerName: string | null; holdExpiresAt: string | null; decisionReason: string | null;
   cancellationPolicy: { description: Record<string, string>; tiers: { hoursBefore: number; refundPercentOfPaid: number }[]; depositRefundable: boolean } | null;
-  history: { to: string; reason: string | null; at: string }[];
+  history: { to: string; reason: string | null; at: string }[]; eventId: string | null;
 }
 type Preview = { mode: string; hoursBefore: number; platformPaid: string; directPaid: string; refund: string; retained: string; refundPercent: number | null; note: string };
 
@@ -61,6 +62,7 @@ export default function BookingPage({ params }: { params: Promise<{ id: string }
           [tr({ ar: 'موعد سداد المتبقي', en: 'Balance due' }), <DateTime key="bd" value={b.balanceDueAt} dateOnly />],
         ]} />
       </Card>
+      <EventPicker value={b.eventId} path={`/v1/bookings/${id}/event`} testId="booking-event" />
       {b.cancellationPolicy && <Card title={tr({ ar: 'سياسة الإلغاء المتفق عليها', en: 'Agreed cancellation policy' })}>
         <p>{localized(b.cancellationPolicy.description, lang)}</p>
         {p && <p className="small muted">{tr({ ar: 'لو ألغيت الآن:', en: 'If you cancel now:' })} {tr({ ar: 'استرداد', en: 'refund' })} {formatMoney(p.refund, b.currency)} · {tr({ ar: 'محتجز', en: 'retained' })} {formatMoney(p.retained, b.currency)}</p>}
