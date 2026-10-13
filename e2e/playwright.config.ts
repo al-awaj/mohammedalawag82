@@ -1,0 +1,35 @@
+import { existsSync } from 'node:fs';
+import { defineConfig } from '@playwright/test';
+import { E2E, apiUrl } from './env';
+
+const apiEnv = {
+  NODE_ENV: 'test', PORT: String(E2E.apiPort), HOST: '127.0.0.1', DATABASE_URL: E2E.databaseUrl, JWT_SECRET: E2E.jwtSecret,
+  STORAGE_DIR: './.e2e-storage', RATE_LIMIT_ENABLED: 'false', CORS_ORIGINS: `http://localhost:${E2E.mobileWebPort}`, [E2E.sandboxSecretRef]: E2E.sandboxSecret,
+};
+const web = (dir: string, port: number) => ({
+  command: `npx next start -p ${port}`, cwd: `../apps/${dir}`, port, reuseExistingServer: false, timeout: 60_000,
+  env: { API_URL: apiUrl, NODE_ENV: 'production', NEXT_TELEMETRY_DISABLED: '1' },
+});
+
+export default defineConfig({
+  testDir: './tests',
+  fullyParallel: false,
+  workers: 1,
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
+  reporter: [['list']],
+  use: {
+    // A preinstalled Chromium when present (PW_CHROMIUM or the sandbox path), else Playwright's own (CI).
+    launchOptions: { executablePath: process.env.PW_CHROMIUM ?? (existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined) },
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
+  webServer: [
+    { command: 'node --import tsx src/server.ts', cwd: '../apps/api', port: E2E.apiPort, reuseExistingServer: false, timeout: 60_000, env: apiEnv },
+    web('admin', E2E.adminPort),
+    web('provider', E2E.providerPort),
+    web('web', E2E.webPort),
+    // The mobile app's web build (npm run build:mobile-web), exercising the app's real screens and API calls.
+    { command: `node serve-static.mjs ../apps/mobile/dist-web ${E2E.mobileWebPort}`, port: E2E.mobileWebPort, reuseExistingServer: false, timeout: 30_000 },
+  ],
+});

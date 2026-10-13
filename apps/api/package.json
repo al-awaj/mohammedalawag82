@@ -1,0 +1,44 @@
+{
+  "name": "@events/api",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --watch --import tsx src/server.ts",
+    "start": "node --env-file-if-exists=.env --import tsx src/server.ts",
+    "migrate": "node --env-file-if-exists=.env --import tsx src/scripts/migrate.ts",
+    "seed:reference": "node --env-file-if-exists=.env --import tsx src/scripts/seed-reference.ts",
+    "create-admin": "node --env-file-if-exists=.env --import tsx src/scripts/create-admin.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:perf": "vitest run -c vitest.perf.config.ts",
+    "backup": "node --env-file-if-exists=.env --import tsx src/scripts/backup.ts",
+    "restore": "node --env-file-if-exists=.env --import tsx src/scripts/restore.ts",
+    "worker": "node --env-file-if-exists=.env --import tsx src/worker.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1150.0",
+    "@fastify/cors": "^11.3.1",
+    "@fastify/helmet": "^13.1.2",
+    "@fastify/multipart": "^10.1.3",
+    "@fastify/rate-limit": "^11.2.1",
+    "@fastify/swagger": "^9.9.2",
+    "@fastify/swagger-ui": "^6.1.2",
+    "fastify": "^5.12.5",
+    "fastify-type-provider-zod": "^7.0.0",
+    "jose": "^6.2.12",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/autocannon": "^7.12.7",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "autocannon": "^8.0.0",
+    "openapi-types": "^12.1.3",
+    "tsx": "^4.23.15",
+    "typescript": "5.9",
+    "vitest": "^5.0.4"
+  }
+}

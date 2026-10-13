@@ -1,0 +1,14 @@
+# Local PostgreSQL for development and tests.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: events_dev
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+volumes:
+  pgdata:

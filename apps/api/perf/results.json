@@ -1,0 +1,136 @@
+{
+  "at": "2026-10-13T04:30:43.517Z",
+  "durationSec": 10,
+  "connections": 20,
+  "volume": {
+    "services": 20020,
+    "service_media": 20020,
+    "calendar_blocks": 100200,
+    "bookings": 100200,
+    "payments": 200,
+    "journal_lines": 550,
+    "users": 55
+  },
+  "results": [
+    {
+      "name": "search: country page",
+      "requests": 1873,
+      "rps": 187,
+      "p50": 102,
+      "p90": 141,
+      "p99": 190,
+      "max": 389,
+      "errors": 0,
+      "non2xx": 0,
+      "budgetP99": 500
+    },
+    {
+      "name": "search: city + text + price sort",
+      "requests": 1446,
+      "rps": 145,
+      "p50": 134,
+      "p90": 184,
+      "p99": 232,
+      "max": 294,
+      "errors": 0,
+      "non2xx": 0,
+      "budgetP99": 500
+    },
+    {
+      "name": "search: available on a busy date",
+      "requests": 385,
+      "rps": 39,
+      "p50": 507,
+      "p90": 560,
+      "p99": 664,
+      "max": 725,
+      "errors": 0,
+      "non2xx": 0,
+      "budgetP99": 800
+    },
+    {
+      "name": "service detail",
+      "requests": 8654,
+      "rps": 865,
+      "p50": 22,
+      "p90": 29,
+      "p99": 38,
+      "max": 182,
+      "errors": 0,
+      "non2xx": 0,
+      "budgetP99": 300
+    },
+    {
+      "name": "availability: 28 days",
+      "requests": 6570,
+      "rps": 657,
+      "p50": 29,
+      "p90": 37,
+      "p99": 46,
+      "max": 72,
+      "errors": 0,
+      "non2xx": 0,
+      "budgetP99": 400
+    },
+    {
+      "name": "quote",
+      "requests": 9591,
+      "rps": 959,
+      "p50": 19,
+      "p90": 26,
+      "p99": 36,
+      "max": 74,
+      "errors": 0,
+      "non2xx": 0,
+      "budgetP99": 300
+    },
+    {
+      "name": "customer: my bookings",
+      "requests": 3106,
+      "rps": 311,
+      "p50": 62,
+      "p90": 78,
+      "p99": 96,
+      "max": 165,
+      "errors": 0,
+      "non2xx": 0,
+      "budgetP99": 400
+    },
+    {
+      "name": "provider: bookings",
+      "requests": 6271,
+      "rps": 627,
+      "p50": 31,
+      "p90": 39,
+      "p99": 50,
+      "max": 103,
+      "errors": 0,
+      "non2xx": 0,
+      "budgetP99": 400
+    },
+    {
+      "name": "admin: bookings list",
+      "requests": 3116,
+      "rps": 312,
+      "p50": 61,
+      "p90": 79,
+      "p99": 98,
+      "max": 224,
+      "errors": 0,
+      "non2xx": 0,
+      "budgetP99": 600
+    },
+    {
+      "name": "admin: revenue report",
+      "requests": 11539,
+      "rps": 1154,
+      "p50": 16,
+      "p90": 21,
+      "p99": 29,
+      "max": 81,
+      "errors": 0,
+      "non2xx": 0,
+      "budgetP99": 1000
+    }
+  ]
+}

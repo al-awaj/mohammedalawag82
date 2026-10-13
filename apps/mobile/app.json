@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "مناسبات",
+    "slug": "events-platform",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.example.events",
+      "infoPlist": {
+        "CFBundleAllowMixedLocalizations": true
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.example.events"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "scheme": "events",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "supportsRTL": true
+    }
+  }
+}
