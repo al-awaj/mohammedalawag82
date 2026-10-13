@@ -13,6 +13,7 @@ export async function marketplace(ctx: Ctx, secretEnv: string) {
   const supervisor = await createStaff(ctx, [{ code: 'services_supervisor', countryId: country.id }]);
   const financeA = await createStaff(ctx, [{ code: 'finance_officer', countryId: country.id }]);
   const financeB = await createStaff(ctx, [{ code: 'finance_officer', countryId: country.id }]);
+  const manager = await createStaff(ctx, [{ code: 'manager', countryId: country.id }]);
   const categoryId = (await api(ctx, 'POST', '/v1/admin/categories', { token: admin.token, body: { slug: `c-${uniq()}`, name: { en: 'C' }, countryIds: [country.id] } })).body.id;
   const hallType = (await api(ctx, 'POST', '/v1/admin/service-types', { token: admin.token, body: { categoryId, code: `t_${uniq()}`.slice(0, 40), name: { en: 'Hall' }, bookingMode: 'full_day', pricingUnits: ['fixed'] } })).body.id as string;
   const gw = (await api(ctx, 'POST', '/v1/admin/accounts', { token: admin.token, body: { countryId: country.id, currency: 'SAR', kind: 'gateway', suffix: 'GW', name: { en: 'Gateway' } } })).body.id;
@@ -76,5 +77,5 @@ export async function marketplace(ctx: Ctx, secretEnv: string) {
     return p;
   }
 
-  return { admin, country, supervisor, financeA, financeB, hallType, bankAccount, integrationId, hall, customer, webhook, order, startCard, payCard, nextDate };
+  return { admin, country, supervisor, financeA, financeB, manager, hallType, bankAccount, integrationId, hall, customer, webhook, order, startCard, payCard, nextDate };
 }
