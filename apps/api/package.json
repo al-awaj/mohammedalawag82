@@ -11,6 +11,7 @@
     "create-admin": "node --env-file-if-exists=.env --import tsx src/scripts/create-admin.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:perf": "vitest run -c vitest.perf.config.ts",
     "worker": "node --env-file-if-exists=.env --import tsx src/worker.ts"
   },
   "dependencies": {
@@ -27,8 +28,10 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/autocannon": "^7.12.7",
     "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
+    "autocannon": "^8.0.0",
     "openapi-types": "^12.1.3",
     "tsx": "^4.23.15",
     "typescript": "5.9",

@@ -94,17 +94,18 @@ export async function catalogPublicRoutes(app: App, deps: Deps) {
     if (q.date) {
       // Open that weekday (or no opening rules) and some capacity left during the local day. For time-slot
       // services this is a day-level check; exact slots come from GET /services/:id/availability.
+      // Unavailable services are found in one pass over the blocks overlapping that day (not per service).
       add((n) => `(NOT EXISTS (SELECT 1 FROM availability_rules r WHERE r.service_id = s.id)
                  OR EXISTS (SELECT 1 FROM availability_rules r WHERE r.service_id = s.id AND r.weekday = extract(dow FROM ${n}::date)))
-               AND (t.booking_mode = 'quantity_rental' OR NOT EXISTS (
-                 SELECT 1 FROM calendar_blocks b WHERE b.service_id = s.id AND b.status = 'active' AND NOT (b.kind = 'hold' AND b.expires_at <= now())
-                   AND b.blocked_period @> tstzrange(${n}::date::timestamp AT TIME ZONE co.timezone, (${n}::date + 1)::timestamp AT TIME ZONE co.timezone)
-                   AND (b.kind = 'closed' OR s.max_concurrent_bookings = 1)))
-               AND (t.booking_mode = 'time_slot' OR t.booking_mode = 'quantity_rental' OR (
-                 SELECT coalesce(sum(b.units), 0) FROM calendar_blocks b WHERE b.service_id = s.id AND b.status = 'active'
-                   AND NOT (b.kind = 'hold' AND b.expires_at <= now())
-                   AND b.blocked_period && tstzrange(${n}::date::timestamp AT TIME ZONE co.timezone, (${n}::date + 1)::timestamp AT TIME ZONE co.timezone)
-               ) < s.max_concurrent_bookings)`, q.date);
+               AND s.id NOT IN (
+                 SELECT b.service_id FROM calendar_blocks b JOIN services s2 ON s2.id = b.service_id
+                   JOIN service_types t2 ON t2.id = s2.service_type_id JOIN countries c2 ON c2.id = s2.country_id
+                  WHERE c2.code = $1 AND t2.booking_mode <> 'quantity_rental' AND b.status = 'active' AND NOT (b.kind = 'hold' AND b.expires_at <= now())
+                    AND b.blocked_period && tstzrange(${n}::date::timestamp AT TIME ZONE c2.timezone, (${n}::date + 1)::timestamp AT TIME ZONE c2.timezone)
+                  GROUP BY b.service_id, s2.max_concurrent_bookings, t2.booking_mode
+                 HAVING bool_or(b.blocked_period @> tstzrange(${n}::date::timestamp AT TIME ZONE c2.timezone, (${n}::date + 1)::timestamp AT TIME ZONE c2.timezone)
+                                AND (b.kind = 'closed' OR s2.max_concurrent_bookings = 1))
+                     OR (t2.booking_mode <> 'time_slot' AND sum(b.units) >= s2.max_concurrent_bookings))`, q.date);
     }
     if (q.attrs) {
       if (!q.type) throw badRequest('VALIDATION_FAILED', [{ path: '/attrs', message: 'attribute filters require `type`' }]);
@@ -131,30 +132,40 @@ export async function catalogPublicRoutes(app: App, deps: Deps) {
       }
     }
 
+    // Haversine, km, for the given latitude/longitude placeholders.
+    const distanceSql = (la: string, ln: string) => `CASE WHEN s.latitude IS NULL THEN NULL ELSE 6371 * 2 * asin(sqrt(
+        power(sin(radians((s.latitude::float8 - ${la}::float8) / 2)), 2) +
+        cos(radians(${la}::float8)) * cos(radians(s.latitude::float8)) * power(sin(radians((s.longitude::float8 - ${ln}::float8) / 2)), 2))) END`;
     let distance = 'NULL::float8';
     if (geo) {
       params.push(q.lat, q.lng);
-      const [la, ln] = [`$${params.length - 1}`, `$${params.length}`];
-      // Haversine, km.
-      distance = `CASE WHEN s.latitude IS NULL THEN NULL ELSE 6371 * 2 * asin(sqrt(
-        power(sin(radians((s.latitude::float8 - ${la}::float8) / 2)), 2) +
-        cos(radians(${la}::float8)) * cos(radians(s.latitude::float8)) * power(sin(radians((s.longitude::float8 - ${ln}::float8) / 2)), 2))) END`;
+      distance = distanceSql(`$${params.length - 1}`, `$${params.length}`);
       if (q.radiusKm) add((n) => `(${distance}) <= ${n}`, q.radiusKm);
     }
-    const order = { newest: 's.published_at DESC', price_asc: 'from_price ASC', price_desc: 'from_price DESC', distance: 'distance_km ASC NULLS LAST', rating: 'rating DESC NULLS LAST' }[q.sort];
+    // Two steps: match, sort and count on cheap columns, then load the display columns for one page only.
+    const sortKey = { newest: 's.published_at', price_asc: priceExpr, price_desc: priceExpr, distance, rating: ratingExpr }[q.sort];
+    const dir = { newest: 'DESC', price_asc: 'ASC', price_desc: 'DESC', distance: 'ASC NULLS LAST', rating: 'DESC NULLS LAST' }[q.sort];
     params.push(q.limit, q.offset);
-    const { rows } = await db.query(
-      `SELECT s.id, s.title, s.city, s.base_price AS "basePrice", ${priceExpr} AS from_price, s.currency_code AS currency,
-              s.pricing_unit AS "pricingUnit", s.capacity, s.requires_provider_approval AS "requiresProviderApproval",
-              t.code AS "typeCode", t.name AS "typeName", s.country_id, p.business_name AS provider_name, p.show_identity,
-              (${distance}) AS distance_km, round(${ratingExpr}, 2)::text AS rating,
-              (SELECT count(*)::int FROM reviews rv WHERE rv.service_id = s.id AND rv.status = 'published') AS review_count,
-              (SELECT m.id FROM service_media m WHERE m.service_id = s.id AND m.kind = 'image' ORDER BY m.sort_order LIMIT 1) AS cover_id,
-              count(*) OVER() AS total
+    const page = (await db.query<{ id: string; total: string }>(
+      `SELECT s.id, count(*) OVER() AS total
          FROM services s JOIN service_types t ON t.id = s.service_type_id JOIN service_categories cat ON cat.id = t.category_id
          JOIN providers p ON p.id = s.provider_id JOIN countries co ON co.id = s.country_id
         WHERE ${where.join(' AND ')}
-        ORDER BY ${order}, s.id LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
+        ORDER BY ${sortKey} ${dir}, s.id LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
+    const ids = page.map((r) => r.id);
+    const geoParams = geo ? [q.lat, q.lng] : [];
+    const detailDistance = geo ? distanceSql('$2', '$3') : 'NULL::float8';
+    const details = ids.length ? (await db.query(
+      `SELECT s.id, s.title, s.city, s.base_price AS "basePrice", ${priceExpr} AS from_price, s.currency_code AS currency,
+              s.pricing_unit AS "pricingUnit", s.capacity, s.requires_provider_approval AS "requiresProviderApproval",
+              t.code AS "typeCode", t.name AS "typeName", s.country_id, p.business_name AS provider_name, p.show_identity,
+              (${detailDistance}) AS distance_km, round(${ratingExpr}, 2)::text AS rating,
+              (SELECT count(*)::int FROM reviews rv WHERE rv.service_id = s.id AND rv.status = 'published') AS review_count,
+              (SELECT m.id FROM service_media m WHERE m.service_id = s.id AND m.kind = 'image' ORDER BY m.sort_order LIMIT 1) AS cover_id
+         FROM services s JOIN service_types t ON t.id = s.service_type_id JOIN providers p ON p.id = s.provider_id
+        WHERE s.id = ANY($1)`, [ids, ...geoParams])).rows : [];
+    const byId = new Map(details.map((r) => [r.id as string, r]));
+    const rows = ids.map((id) => ({ ...byId.get(id)!, total: page[0]!.total }));
 
     const countryId = rows[0]?.country_id;
     const platformShows = countryId ? await identityVisible(db, countryId, true) : false;

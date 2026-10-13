@@ -344,13 +344,16 @@ export async function bookingRoutes(app: App, deps: Deps) {
   }, async (req) => {
     const scope = countryScope(requireUser(req), 'bookings.view');
     const q = req.query;
+    // Page on the bookings table first, then build the full rows (paid amounts, names) for that page only.
     const { rows } = await db.query(
-      `SELECT * FROM (${bookingSelect('staff')}
-         WHERE ($1::uuid[] IS NULL OR b.country_id = ANY($1)) AND ($2::text IS NULL OR b.status = $2) AND ($3::uuid IS NULL OR b.provider_id = $3)
-           AND ($4::uuid IS NULL OR b.customer_id = $4) AND ($5::uuid IS NULL OR b.service_id = $5)
-           AND ($6::date IS NULL OR b.start_at >= $6::date) AND ($7::date IS NULL OR b.start_at < $7::date + 1)
-           AND ($8::text IS NULL OR b.number = $8 OR o.number = $8)) x
-       ORDER BY "startAt" DESC LIMIT $9 OFFSET $10`,
+      `WITH page AS (
+         SELECT b.id, b.start_at FROM bookings b
+          WHERE ($1::uuid[] IS NULL OR b.country_id = ANY($1)) AND ($2::text IS NULL OR b.status = $2) AND ($3::uuid IS NULL OR b.provider_id = $3)
+            AND ($4::uuid IS NULL OR b.customer_id = $4) AND ($5::uuid IS NULL OR b.service_id = $5)
+            AND ($6::date IS NULL OR b.start_at >= $6::date) AND ($7::date IS NULL OR b.start_at < $7::date + 1)
+            AND ($8::text IS NULL OR b.number = $8 OR b.order_id IN (SELECT o.id FROM orders o WHERE o.number = $8))
+          ORDER BY b.start_at DESC, b.id LIMIT $9 OFFSET $10)
+       ${bookingSelect('staff')} JOIN page ON page.id = b.id ORDER BY page.start_at DESC, b.id`,
       [scope, q.status ?? null, q.providerId ?? null, q.customerId ?? null, q.serviceId ?? null, q.from ?? null, q.to ?? null, q.q ?? null, q.limit, q.offset]);
     return rows.map(strip);
   });
