@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:perf": "vitest run -c vitest.perf.config.ts",
+    "backup": "node --env-file-if-exists=.env --import tsx src/scripts/backup.ts",
+    "restore": "node --env-file-if-exists=.env --import tsx src/scripts/restore.ts",
     "worker": "node --env-file-if-exists=.env --import tsx src/worker.ts"
   },
   "dependencies": {
