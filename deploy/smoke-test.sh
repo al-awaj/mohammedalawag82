@@ -60,5 +60,19 @@ mkdir -p backups && { chown 10001 backups 2>/dev/null || chmod 777 backups; }
 dc run --rm backup | tail -1
 ls backups/*/manifest.json >/dev/null || fail "no backup written"
 echo "✓ backup written and fingerprinted"
+
+# Disaster recovery rehearsal: lose everything (containers, database, files), restore, sign in again.
+dc down -v >/dev/null 2>&1
+dc up -d --no-build --wait postgres >/dev/null 2>&1
+DBURL="postgres://events:$(grep ^POSTGRES_PASSWORD "$ENV_FILE" | cut -d= -f2)@postgres:5432/events"
+dc run --rm restore "/data/backups/$(ls backups | grep -v log | tail -1)" "$DBURL" /data/storage | tail -1 | grep -q "Restored and verified" || fail "restore"
+echo "✓ restored onto an empty database and storage, verified"
+dc up -d --no-build postgres migrate api worker admin provider web caddy >/dev/null 2>&1
+for i in $(seq 1 60); do code=$(PATH_=/ready https api.localhost -o /dev/null -w '%{http_code}' || true); [ "$code" = 200 ] && break; sleep 2; done
+[ "$code" = 200 ] || fail "API not ready after restore ($code)"
+login=$(PATH_=/bff/session/login https admin.localhost -H 'content-type: application/json' -H 'x-csrf: 1' -H 'origin: https://admin.localhost' \
+  -d '{"identifier":"smoke@example.org","password":"Sm0ke-Test-Passw0rd!"}' -o /dev/null -w '%{http_code}')
+[ "$login" = 200 ] || fail "sign-in after restore → $login"
+echo "✓ the restored platform serves the same accounts"
 rm -rf backups
 echo "SMOKE TEST PASSED"

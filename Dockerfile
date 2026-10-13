@@ -47,7 +47,7 @@ COPY --from=api-deps /repo/node_modules ./node_modules
 COPY --from=api-deps /repo/apps/api/package.json ./apps/api/package.json
 COPY --from=api-build /repo/apps/api/dist ./apps/api/dist
 COPY apps/api/migrations ./apps/api/migrations
-RUN mkdir -p /data/storage /data/backups && chown -R app:app /data
+RUN mkdir -p /data/storage /data/backups /data/restore-drill && chown -R app:app /data
 USER app
 WORKDIR /app/apps/api
 EXPOSE 3000

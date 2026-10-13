@@ -76,6 +76,17 @@ cd apps/api && npm run test:perf     # النتائج في perf/results.json
 
 النتائج الكاملة ومصفوفة تتبع الاختبارات الإلزامية في [`docs/11-test-report.md`](docs/11-test-report.md).
 
+## النشر في الإنتاج
+
+```bash
+cd deploy && cp .env.example .env    # النطاقات، الأسرار، التخزين، الهوية
+docker compose build && docker compose up -d
+docker compose run --rm create-admin --name "…" --email … --password '…'
+./smoke-test.sh                      # تجربة الحزمة كاملة محليًا قبل النشر
+```
+
+التفاصيل في [`docs/12-deployment.md`](docs/12-deployment.md)، والتشغيل والطوارئ في [`docs/13-operations.md`](docs/13-operations.md)، والأدلة والتسليم في `docs/14..16`.
+
 ## النسخ الاحتياطي والاستعادة
 
 ```bash

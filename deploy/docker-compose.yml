@@ -100,6 +100,16 @@ services:
     command: ["node", "dist/scripts/backup.js", "/data/backups", "${BACKUP_KEEP:-14}"]
     volumes: [storage:/data/storage, ./backups:/data/backups]
 
+  # Disaster recovery onto an EMPTY database and storage (docs/13-operations.md §3):
+  #   docker compose run --rm restore /data/backups/<backup> <databaseUrl> /data/storage
+  restore:
+    <<: *api
+    restart: "no"
+    profiles: [ops]
+    entrypoint: ["node", "dist/scripts/restore.js"]
+    volumes: [storage:/data/storage, ./backups:/data/backups, restore_drill:/data/restore-drill]
+    depends_on: { postgres: { condition: service_healthy } }
+
   # docker compose run --rm create-admin --name "…" --email … --password '…'
   create-admin:
     <<: *api
@@ -110,6 +120,7 @@ services:
 volumes:
   pgdata:
   storage:
+  restore_drill:
   caddy_data:
   caddy_config:
 
