@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:apps": "npm --prefix .. run build --workspace apps/admin --workspace apps/provider --workspace apps/web && npm run build:mobile-web",
+    "build:apps": "cd .. && npm run build -w apps/admin -w apps/provider -w apps/web && cd e2e && npm run build:mobile-web",
     "setup-db": "node --import tsx setup-db.ts",
     "test": "npm run setup-db && playwright test",
     "typecheck": "tsc --noEmit",

@@ -21,7 +21,9 @@ CADDYFILE=./Caddyfile.local
 IMAGE_TAG=${IMAGE_TAG:-latest}
 ENV
 dc() { docker compose --env-file "$ENV_FILE" "$@"; }
-cleanup() { if [ "${KEEP:-0}" != 1 ]; then dc --profile ops down -v --remove-orphans >/dev/null 2>&1 || true; fi; rm -f "$ENV_FILE"; }
+# Backups are written by the container's own user; remove them through a container too.
+clear_backups() { [ -d backups ] && dc run --rm --no-deps --entrypoint sh backup -c 'rm -rf /data/backups/*' >/dev/null 2>&1; rmdir backups 2>/dev/null || true; }
+cleanup() { if [ "${KEEP:-0}" != 1 ]; then clear_backups; dc --profile ops down -v --remove-orphans >/dev/null 2>&1 || true; fi; rm -f "$ENV_FILE"; }
 trap cleanup EXIT
 
 fail() { echo "FAIL: $*"; dc logs --tail 40 >&2 || true; exit 1; }
@@ -74,5 +76,4 @@ login=$(PATH_=/bff/session/login https admin.localhost -H 'content-type: applica
   -d '{"identifier":"smoke@example.org","password":"Sm0ke-Test-Passw0rd!"}' -o /dev/null -w '%{http_code}')
 [ "$login" = 200 ] || fail "sign-in after restore → $login"
 echo "✓ the restored platform serves the same accounts"
-rm -rf backups
 echo "SMOKE TEST PASSED"
