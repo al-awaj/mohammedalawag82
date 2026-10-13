@@ -12,3 +12,4 @@ playwright-report/
 dist-web/
 .expo/
 backups/
+dist-native/
