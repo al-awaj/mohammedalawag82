@@ -1,0 +1,32 @@
+import { Text } from 'react-native';
+import { Stack } from 'expo-router';
+import { enumLabel, formatDateTime } from '@events/shared';
+import { useGet, useSession } from '../lib/session';
+import { useTr } from '../lib/i18n';
+import { RequireLogin } from '../components/require-login';
+import { Card, Empty, ErrorText, Loading, Money, P, Screen } from '../components/ui';
+
+type Doc = { id: string; number: string; kind: string; currency: string; total: string; issuedAt: string };
+
+export default function Documents() {
+  return <RequireLogin><List /></RequireLogin>;
+}
+function List() {
+  const tr = useTr();
+  const { lang } = useSession();
+  const q = useGet<Doc[]>('/v1/documents', { limit: 200 });
+  return (
+    <Screen>
+      <Stack.Screen options={{ title: tr({ ar: 'الفواتير والإيصالات', en: 'Invoices & receipts' }) }} />
+      <P muted small>{tr({ ar: 'للطباعة استخدم الموقع الإلكتروني.', en: 'Use the website to print documents.' })}</P>
+      <ErrorText error={q.error} />
+      {q.isLoading ? <Loading /> : !q.data?.length ? <Empty>{tr({ ar: 'لا توجد مستندات', en: 'No documents' })}</Empty> : q.data.map((d) => (
+        <Card key={d.id} testID={`doc-${d.number}`}>
+          <Text style={{ fontWeight: '600' }}>{enumLabel('document', d.kind, lang)} · {d.number}</Text>
+          <Money amount={d.total} currency={d.currency} />
+          <P muted small>{formatDateTime(d.issuedAt, lang)}</P>
+        </Card>
+      ))}
+    </Screen>
+  );
+}

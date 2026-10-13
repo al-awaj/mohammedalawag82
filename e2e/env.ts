@@ -5,6 +5,7 @@ export const E2E = {
   adminPort: 3101,
   providerPort: 3102,
   webPort: 3103,
+  mobileWebPort: 3104,
   jwtSecret: 'e2e-secret-that-is-at-least-32-characters-long',
   admin: { email: 'e2e-admin@test.local', password: 'E2e-Admin-12345', name: 'E2E Admin' },
   sandboxSecretRef: 'PAY_SANDBOX_E2E_SECRET',

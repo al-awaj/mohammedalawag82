@@ -14,8 +14,13 @@
     "@events/web-kit": "*",
     "@tanstack/react-query": "^5.104.2",
     "next": "16.4.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   },
-  "devDependencies": { "@types/node": "^22.20.5", "@types/react": "^19", "@types/react-dom": "^19", "typescript": "5.9" }
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
+    "typescript": "5.9"
+  }
 }
