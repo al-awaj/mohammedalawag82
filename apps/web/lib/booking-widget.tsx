@@ -13,9 +13,9 @@ export interface PublicService {
   providerName: string | null; attributes: Record<string, unknown>;
   fields: { key: string; label: Record<string, string>; dataType: string; options: { value: string; label: Record<string, string> }[] }[];
   cancellationPolicy: { description: Record<string, string>; tiers: { hoursBefore: number; refundPercentOfPaid: number }[]; depositRefundable: boolean } | null;
-  packages: { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; inclusions: unknown[]; addOns: { code: string; name: Record<string, string>; price: string }[] }[];
+  packages: { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; inclusions: unknown[]; addOns: { code: string; name: Record<string, string>; price: string }[]; durationMinutes: number | null; terms: Record<string, string> | null }[];
   rentalItems: { id: string; name: Record<string, string>; quantityTotal: number; pricePerDay: string; currency: string; securityDeposit: string | null }[];
-  media: { id: string; kind: string; caption: Record<string, string> | null; url: string }[];
+  media: { id: string; kind: string; caption: Record<string, string> | null; packageId: string | null; url: string }[];
   rating: { average: string | null; count: number };
 }
 type Day = { date: string; open: boolean; available: boolean; slots?: { start: string; end: string; available: boolean }[] };

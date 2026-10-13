@@ -122,6 +122,13 @@ async function lockOwnService(c: Executor, provider: ProviderRow, id: string): P
   return s;
 }
 
+/** A media item can only illustrate a package of its own service. */
+async function assertPackageOf(c: Executor, packageId: string | null, serviceId: string) {
+  if (!packageId) return;
+  const r = await c.query('SELECT 1 FROM packages WHERE id = $1 AND service_id = $2', [packageId, serviceId]);
+  if (!r.rowCount) throw badRequest('VALIDATION_FAILED', [{ path: '/packageId', message: 'package not found on this service' }]);
+}
+
 async function assertTypeGranted(c: Executor, provider: ProviderRow, type: TypeRow) {
   if (!type.is_active) throw badRequest('SERVICE_TYPE_INACTIVE');
   if (!type.provider_can_create) throw forbidden('SERVICE_TYPE_NOT_ALLOWED');
@@ -459,6 +466,8 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
     if (!file) throw badRequest('VALIDATION_FAILED', [{ path: '/file', message: 'file is required' }]);
     const field = (name: string) => { const f = file.fields[name] as { value?: unknown } | undefined; return typeof f?.value === 'string' ? f.value : undefined; };
     const isPastWork = field('isPastWork') === 'true';
+    const packageId = field('packageId') || null;
+    if (packageId && !z.uuid().safeParse(packageId).success) throw badRequest('VALIDATION_FAILED', [{ path: '/packageId', message: 'invalid id' }]);
     const stored = await deps.storage.save(`services/${req.params.id}`, await file.toBuffer(), [...IMAGE_TYPES, ...VIDEO_TYPES]);
     const kind = VIDEO_TYPES.includes(stored.mime) ? 'video' : 'image';
     try {
@@ -466,15 +475,16 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
         const p = await providerOf(c, req, { forWrite: true });
         const { type } = await ownedServiceForChild(c, p, req.params.id);
         if (kind === 'video' && !type.allows_video) throw badRequest('VIDEO_NOT_ALLOWED');
+        await assertPackageOf(c, packageId, req.params.id);
         if (kind === 'image') {
           const n = Number((await c.query<{ n: string }>(`SELECT count(*) AS n FROM service_media WHERE service_id = $1 AND kind = 'image'`, [req.params.id])).rows[0]!.n);
           if (n >= type.max_images) throw conflict('MEDIA_LIMIT_REACHED', { maxImages: type.max_images });
         }
         const mediaId = (await c.query<{ id: string }>(
-          `INSERT INTO service_media (service_id, kind, file_key, mime_type, size_bytes, sha256, is_past_work, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT coalesce(max(sort_order), -1) + 1 FROM service_media WHERE service_id = $1)) RETURNING id`,
-          [req.params.id, kind, stored.key, stored.mime, stored.size, stored.sha256, isPastWork])).rows[0]!.id;
-        await audit(c, actorOf(req), { action: 'service.media_added', entityType: 'service', entityId: req.params.id, after: { mediaId, kind, sha256: stored.sha256 } });
+          `INSERT INTO service_media (service_id, kind, file_key, mime_type, size_bytes, sha256, is_past_work, package_id, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT coalesce(max(sort_order), -1) + 1 FROM service_media WHERE service_id = $1)) RETURNING id`,
+          [req.params.id, kind, stored.key, stored.mime, stored.size, stored.sha256, isPastWork, packageId])).rows[0]!.id;
+        await audit(c, actorOf(req), { action: 'service.media_added', entityType: 'service', entityId: req.params.id, after: { mediaId, kind, sha256: stored.sha256, packageId } });
         return mediaId;
       });
       return reply.status(201).send({ id, kind, mimeType: stored.mime, url: `/v1/media/${id}` });
@@ -485,17 +495,19 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
   });
 
   app.patch('/provider/media/:id', {
-    ...guard, schema: { tags: ['provider-panel'], security: sec, params: idParams, body: z.object({ sortOrder: z.number().int().optional(), isPastWork: z.boolean().optional(), caption: i18nTextSchema.nullable().optional() }) },
+    ...guard, schema: { tags: ['provider-panel'], security: sec, params: idParams, body: z.object({ sortOrder: z.number().int().optional(), isPastWork: z.boolean().optional(), caption: i18nTextSchema.nullable().optional(), packageId: z.uuid().nullable().optional() }) },
   }, async (req) => {
     return withTx(db, async (c) => {
       const p = await providerOf(c, req, { forWrite: true });
       const m = (await c.query('SELECT * FROM service_media WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
       if (!m) throw notFound();
       await ownedServiceForChild(c, p, m.service_id);
+      if (req.body.packageId) await assertPackageOf(c, req.body.packageId, m.service_id);
       await c.query(
         `UPDATE service_media SET sort_order = coalesce($2, sort_order), is_past_work = coalesce($3, is_past_work),
-           caption = CASE WHEN $4 THEN $5::jsonb ELSE caption END WHERE id = $1`,
-        [req.params.id, req.body.sortOrder ?? null, req.body.isPastWork ?? null, req.body.caption !== undefined, req.body.caption ? JSON.stringify(req.body.caption) : null]);
+           caption = CASE WHEN $4 THEN $5::jsonb ELSE caption END, package_id = CASE WHEN $6 THEN $7::uuid ELSE package_id END WHERE id = $1`,
+        [req.params.id, req.body.sortOrder ?? null, req.body.isPastWork ?? null, req.body.caption !== undefined, req.body.caption ? JSON.stringify(req.body.caption) : null,
+          req.body.packageId !== undefined, req.body.packageId ?? null]);
       await audit(c, actorOf(req), { action: 'service.media_updated', entityType: 'service', entityId: m.service_id, before: m, after: req.body });
       return { id: req.params.id };
     });

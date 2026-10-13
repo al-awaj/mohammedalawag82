@@ -11,11 +11,20 @@ export interface Service {
   depositType: string; depositValue: string; balanceDueDaysBefore: number; attributes: Record<string, unknown>; maxConcurrentBookings: number; slotStepMinutes: number | null;
   status: string; statusReason: string | null; typeName: Record<string, string>; bookingMode: string; capacityMode: string;
   cancellationPolicy: { id: string } | null; packages: Package[]; rentalItems: RentalItem[];
-  media: { id: string; kind: string; mimeType: string; caption: Record<string, string> | null; isPastWork: boolean; sortOrder: number; url: string }[];
+  media: { id: string; kind: string; mimeType: string; caption: Record<string, string> | null; isPastWork: boolean; packageId: string | null; sortOrder: number; url: string }[];
   rating: { average: string | null; count: number };
 }
-export interface Package { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; pricingUnit: string; durationMinutes: number | null; inclusions: unknown[]; addOns: { code: string; name: Record<string, string>; price: string }[]; status: string; depositType: string | null; depositValue: string | null }
-export interface RentalItem { id: string; sku: string; name: Record<string, string>; quantityTotal: number; condition: string; pricePerDay: string; currency: string; securityDeposit: string | null; status: string }
+export interface Package {
+  id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; pricingUnit: string;
+  durationMinutes: number | null; inclusions: Record<string, string>[]; addOns: { code: string; name: Record<string, string>; price: string }[]; status: string;
+  terms: Record<string, string> | null; availableWeekdays: number[]; maxBookingsPerSlot: number; depositType: string | null; depositValue: string | null;
+  balanceDueDaysBefore: number; validFrom: string | null; validTo: string | null; sortOrder: number;
+}
+export interface RentalItem {
+  id: string; sku: string; name: Record<string, string>; attributes: Record<string, string | number>; quantityTotal: number; condition: string;
+  pricePerDay: string; pricePerPeriod: string | null; periodDays: number | null; currency: string; securityDeposit: string | null;
+  lateFeePerDay: string | null; damageTerms: Record<string, string> | null; status: string;
+}
 
 const UNIT_LABEL: Record<string, { ar: string; en: string }> = {
   fixed: { ar: 'سعر ثابت', en: 'Fixed price' }, per_hour: { ar: 'بالساعة', en: 'Per hour' }, per_day: { ar: 'باليوم', en: 'Per day' },

@@ -25,7 +25,7 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
   const [s, reviews] = await Promise.all([load(id, lang), publicGet<Reviews>(`/v1/services/${id}/reviews?limit=20`, lang)]);
   if (!s) notFound();
   const ar = lang === 'ar';
-  const images = s.media.filter((m) => m.kind === 'image');
+  const images = s.media.filter((m) => m.kind === 'image' && !m.packageId);
   const policy = s.cancellationPolicy;
   return (
     <div className="layout-2">
@@ -61,8 +61,11 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
               <div key={p.id} style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 10 }}>
                 <div className="row between"><strong>{localized(p.name, lang)}</strong><span className="price num" dir="ltr">{formatMoney(p.price, p.currency)}</span></div>
                 {p.description && <p className="muted small">{localized(p.description, lang)}</p>}
+                {s.media.some((m) => m.packageId === p.id) && <div className="gallery">{s.media.filter((m) => m.packageId === p.id && m.kind === 'image').map((m) => <img key={m.id} src={`/bff${m.url}`} alt={m.caption ? localized(m.caption, lang) : localized(p.name, lang)} loading="lazy" />)}</div>}
+                {p.durationMinutes && <p className="small muted">{ar ? `المدة: ${p.durationMinutes} دقيقة` : `Duration: ${p.durationMinutes} minutes`}</p>}
                 {p.inclusions.length > 0 && <ul className="small">{p.inclusions.map((i, n) => <li key={n}>{localized(i, lang)}</li>)}</ul>}
                 {p.addOns.length > 0 && <p className="small muted">{ar ? 'إضافات اختيارية: ' : 'Optional add-ons: '}{p.addOns.map((a) => `${localized(a.name, lang)} (${formatMoney(a.price, p.currency)})`).join('، ')}</p>}
+                {p.terms && <p className="small muted">{ar ? 'شروط الباقة: ' : 'Package terms: '}{localized(p.terms, lang)}</p>}
               </div>
             ))}
           </div>

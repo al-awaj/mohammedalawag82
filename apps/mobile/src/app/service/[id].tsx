@@ -12,9 +12,9 @@ interface Service {
   id: string; title: Record<string, string>; description: Record<string, string>; city: string; basePrice: string; currency: string; requiresProviderApproval: boolean;
   typeName: Record<string, string>; bookingMode: string; capacityMode: string; capacity: number | null; providerName: string | null; durationMinutes: number | null;
   cancellationPolicy: { description: Record<string, string>; depositRefundable: boolean } | null;
-  packages: { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; inclusions: Record<string, string>[] | null; addOns: { code: string; name: Record<string, string>; price: string }[] }[];
+  packages: { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; inclusions: Record<string, string>[] | null; addOns: { code: string; name: Record<string, string>; price: string }[]; durationMinutes: number | null; terms: Record<string, string> | null }[];
   rentalItems: { id: string; sku: string; name: Record<string, string>; quantityTotal: number; pricePerDay: string | null; currency: string; securityDeposit: string | null; lateFeePerDay: string | null; damageTerms: Record<string, string> | null }[];
-  media: { id: string; kind: string; url: string; caption: Record<string, string> | null; isPastWork: boolean }[];
+  media: { id: string; kind: string; url: string; caption: Record<string, string> | null; isPastWork: boolean; packageId: string | null }[];
   rating: { average: string | null; count: number };
   attributes: Record<string, unknown>; fields: { key: string; label: Record<string, string>; dataType: string; options: { value: string; label: Record<string, string> }[] | null }[];
 }
@@ -70,7 +70,9 @@ export default function ServiceScreen() {
   if (!svc) return <Screen><ErrorText error={s.error} /></Screen>;
   const days = avail.data?.days ?? [];
   const selected = days.find((d) => d.date === day);
-  const images = svc.media.filter((m) => m.kind === 'image');
+  // The selected package's own images come first; other packages' images stay with their package.
+  const images = svc.media.filter((m) => m.kind === 'image' && (!m.packageId || m.packageId === packageId))
+    .sort((a, b) => Number(b.packageId === packageId && !!packageId) - Number(a.packageId === packageId && !!packageId));
   const videos = svc.media.filter((m) => m.kind === 'video');
   const facts = svc.fields.filter((f) => svc.attributes[f.key] !== undefined && svc.attributes[f.key] !== null && svc.attributes[f.key] !== '');
   const fmtAttr = (f: Service['fields'][number]) => {
@@ -127,6 +129,8 @@ export default function ServiceScreen() {
             {svc.packages.map((p) => <Button key={p.id} variant={packageId === p.id ? 'primary' : 'secondary'} title={`${localized(p.name, lang)} ${formatMoney(p.price, p.currency)}`} onPress={() => { setPackageId(p.id); setAddOns([]); }} />)}
           </Row>
           {pkg?.description ? <P muted>{localized(pkg.description, lang)}</P> : null}
+          {pkg?.durationMinutes ? <P small>{tr({ ar: `المدة: ${pkg.durationMinutes} دقيقة`, en: `Duration: ${pkg.durationMinutes} minutes` })}</P> : null}
+          {pkg?.terms ? <P small muted>{tr({ ar: 'شروط الباقة: ', en: 'Package terms: ' })}{localized(pkg.terms, lang)}</P> : null}
           {pkg?.inclusions?.length ? <P small>{tr({ ar: 'تشمل:', en: 'Includes:' })} {pkg.inclusions.map((x) => localized(x, lang)).join('، ')}</P> : null}
           {pkg && pkg.addOns.length > 0 && <>
             <P muted small>{tr({ ar: 'إضافات اختيارية', en: 'Optional add-ons' })}</P>

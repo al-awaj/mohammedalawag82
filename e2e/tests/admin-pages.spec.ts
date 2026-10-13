@@ -4,7 +4,7 @@ import { uiLogin } from './helpers';
 
 const ADMIN = `http://localhost:${E2E.adminPort}`;
 const PAGES = [
-  '/', '/applications', '/providers', '/services', '/catalog', '/policies', '/bookings', '/events', '/calendar', '/cancellation-requests', '/disputes',
+  '/', '/applications', '/providers', '/provider-changes', '/services', '/catalog', '/policies', '/bookings', '/events', '/calendar', '/cancellation-requests', '/disputes',
   '/reviews', '/payments', '/refunds', '/earnings', '/settlements', '/accounts', '/commissions', '/payment-settings', '/promotions',
   '/reconciliation', '/reports', '/documents', '/notifications', '/users', '/staff', '/reference', '/settings', '/audit',
 ];

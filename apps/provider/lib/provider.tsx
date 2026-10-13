@@ -43,6 +43,7 @@ export const NAV: NavGroup[] = [
     { href: '/documents', label: { ar: 'المستندات', en: 'Documents' } },
   ] },
   { label: { ar: 'الحساب', en: 'Account' }, items: [
+    { href: '/profile', label: { ar: 'الملف التجاري', en: 'Business profile' } },
     { href: '/onboarding', label: { ar: 'طلب التسجيل', en: 'Application' } },
   ] },
 ];

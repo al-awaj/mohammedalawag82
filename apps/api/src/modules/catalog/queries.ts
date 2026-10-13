@@ -57,7 +57,7 @@ export async function serviceDetail(exec: Executor, id: string, opts: { audience
        FROM rental_items WHERE service_id = $1 AND ($2 = false OR status = 'active') ORDER BY sku`, [id, opts.audience === 'public'])).rows;
 
   const media = (await exec.query(
-    `SELECT id, kind, mime_type AS "mimeType", caption, is_past_work AS "isPastWork", sort_order AS "sortOrder"
+    `SELECT id, kind, mime_type AS "mimeType", caption, is_past_work AS "isPastWork", package_id AS "packageId", sort_order AS "sortOrder"
        FROM service_media WHERE service_id = $1 ORDER BY sort_order, created_at`, [id])).rows
     .map((m) => ({ ...m, url: `/v1/media/${m.id}` }));
 

@@ -12,6 +12,7 @@ export const DEFAULT_TEMPLATES: Record<string, { ar: string; en: string; subject
   'provider_application.approved': { ar: 'تم قبول طلب تسجيلك كصاحب خدمة', en: 'Your provider application was approved' },
   'provider_application.rejected': { ar: 'تم رفض طلب تسجيلك: {{reason}}', en: 'Your application was rejected: {{reason}}' },
   'provider_application.suspended': { ar: 'تم إيقاف حسابك: {{reason}}', en: 'Your account was suspended: {{reason}}' },
+  'provider.profile_change_decided': { ar: 'طلب تعديل بياناتك التجارية: {{status}} {{reason}}', en: 'Your business details change request: {{status}} {{reason}}' },
   'service.publish': { ar: 'تم نشر خدمتك', en: 'Your service was published' },
   'service.reject': { ar: 'خدمتك تحتاج تعديلًا قبل النشر: {{reason}}', en: 'Your service needs changes before publishing: {{reason}}' },
   'service.unpublish': { ar: 'تم إلغاء نشر خدمتك: {{reason}}', en: 'Your service was unpublished: {{reason}}' },

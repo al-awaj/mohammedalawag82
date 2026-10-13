@@ -8,6 +8,7 @@ export const NAV: NavGroup[] = [
   { label: { ar: 'أصحاب الخدمات والخدمات', en: 'Providers & services' }, items: [
     { href: '/applications', label: { ar: 'طلبات التسجيل', en: 'Applications' }, perm: 'provider_applications.view' },
     { href: '/providers', label: { ar: 'أصحاب الخدمات', en: 'Providers' }, perm: 'providers.view' },
+    { href: '/provider-changes', label: { ar: 'طلبات تعديل البيانات', en: 'Profile change requests' }, perm: 'providers.view' },
     { href: '/services', label: { ar: 'الخدمات', en: 'Services' }, perm: 'services.view' },
     { href: '/catalog', label: { ar: 'التصنيفات والأنواع', en: 'Categories & types' }, perm: ['categories.manage', 'service_types.manage'] },
     { href: '/policies', label: { ar: 'سياسات الإلغاء', en: 'Cancellation policies' }, perm: 'services.manage' },
