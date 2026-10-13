@@ -7,7 +7,7 @@ import { opts, raw, useCountries } from '@/lib/util';
 type Msg = { id: string; channel: string; target: string; templateKey: string; language: string; subject: string | null; body: string | null; status: string; attempts: number; lastError: string | null; createdAt: string; sentAt: string | null };
 type Template = { id: string; key: string; channel: string; language: string; subject: string | null; body: string; isActive: boolean; updatedAt: string };
 type Channel = { id: string; countryId: string | null; channel: string; driver: string; endpoint: string; secretRef: string; senderId: string | null; isActive: boolean; secretConfigured: boolean };
-type Rule = { id: string; kind: string; daysBefore: number; countryId: string | null; serviceTypeId: string | null; templateKey: string; isActive: boolean };
+type Rule = { id: string; kind: string; daysBefore: number; countryId: string | null; serviceTypeId: string | null; templateKey: string; channel: string; isActive: boolean };
 const CHANNELS = raw('sms', 'email', 'whatsapp', 'push', 'web');
 
 export default function Notifications() {
@@ -109,6 +109,13 @@ function Channels() {
   );
 }
 
+const REMINDER_CHANNELS: { value: string; label: { ar: string; en: string } }[] = [
+  { value: 'auto', label: { ar: 'تلقائي (رسالة نصية وإلا بريد)', en: 'Automatic (SMS, else email)' } },
+  { value: 'sms', label: { ar: 'رسالة نصية', en: 'SMS' } },
+  { value: 'email', label: { ar: 'بريد إلكتروني', en: 'Email' } },
+  { value: 'whatsapp', label: { ar: 'واتساب', en: 'WhatsApp' } },
+];
+
 function Reminders() {
   const tr = useTr();
   const countries = useCountries();
@@ -127,12 +134,14 @@ function Reminders() {
           { name: 'daysBefore', label: { ar: 'عدد الأيام', en: 'Days' }, type: 'number' },
           { name: 'countryId', label: { ar: 'الدولة', en: 'Country' }, type: 'select', options: countries.options },
           { name: 'templateKey', label: { ar: 'القالب', en: 'Template key' }, required: true },
+          { name: 'channel', label: { ar: 'القناة', en: 'Channel' }, type: 'select', defaultValue: 'auto', options: REMINDER_CHANNELS },
         ]} run={(api, v) => api.post('/v1/admin/reminder-rules', v)} />
       </div>
       <ErrorBox error={error} />
       <DataTable rows={data ?? []} columns={[
         { key: 'kind', label: { ar: 'النوع', en: 'Kind' }, render: (r) => tr(KINDS.find((k) => k.value === r.kind)?.label ?? { ar: r.kind, en: r.kind }) },
         { key: 'daysBefore', label: { ar: 'الأيام', en: 'Days' } },
+        { key: 'channel', label: { ar: 'القناة', en: 'Channel' }, render: (r) => tr(REMINDER_CHANNELS.find((c) => c.value === r.channel)?.label ?? { ar: r.channel, en: r.channel }) },
         { key: 'countryId', label: { ar: 'الدولة', en: 'Country' }, render: (r) => countries.code(r.countryId) },
         { key: 'templateKey', label: { ar: 'القالب', en: 'Template' } },
         { key: 'isActive', label: { ar: 'مفعّلة', en: 'Active' } },

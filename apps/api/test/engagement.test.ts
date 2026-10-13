@@ -142,10 +142,10 @@ describe('notifications (tests 29, clauses 52-54)', () => {
     expect(row.body).toContain('••••••');
     expect(row.payload.code).toBeUndefined();
     // One-time codes are never copied to the in-app inbox.
-    expect((await ctx.db.query(`SELECT 1 FROM message_outbox WHERE recipient_user_id = $1 AND channel = 'web'`, [u.userId])).rowCount).toBe(0);
+    expect((await ctx.db.query(`SELECT 1 FROM message_outbox WHERE recipient_user_id = $1 AND channel = 'web' AND template_key LIKE 'auth.%'`, [u.userId])).rowCount).toBe(0);
 
     const log = (await api(ctx, 'GET', `/v1/admin/notifications?recipientId=${u.userId}`, { token: admin.token })).body;
-    expect(log[0]).toMatchObject({ channel: 'sms', status: 'sent', templateKey: 'auth.verify_phone' });
+    expect(log.find((l: { templateKey: string }) => l.templateKey === 'auth.verify_phone')).toMatchObject({ channel: 'sms', status: 'sent' });
     expect(JSON.stringify(log)).not.toContain(code);
   });
 
@@ -154,12 +154,12 @@ describe('notifications (tests 29, clauses 52-54)', () => {
     relayMode = 'fail';
     try {
       await deliverOutbox(ctx.db);
-      const row = (await ctx.db.query(`SELECT status, attempts, last_error, next_attempt_at > now() AS later FROM message_outbox WHERE recipient_user_id = $1`, [u.userId])).rows[0];
+      const row = (await ctx.db.query(`SELECT status, attempts, last_error, next_attempt_at > now() AS later FROM message_outbox WHERE recipient_user_id = $1 AND template_key = 'auth.verify_phone'`, [u.userId])).rows[0];
       expect(row).toMatchObject({ status: 'pending', attempts: 1, later: true });
       expect(row.last_error).toContain('503');
       await ctx.db.query(`UPDATE message_outbox SET attempts = 4, next_attempt_at = now() WHERE recipient_user_id = $1`, [u.userId]);
       await deliverOutbox(ctx.db);
-      expect((await ctx.db.query(`SELECT status FROM message_outbox WHERE recipient_user_id = $1`, [u.userId])).rows[0].status).toBe('failed');
+      expect((await ctx.db.query(`SELECT status FROM message_outbox WHERE recipient_user_id = $1 AND template_key = 'auth.verify_phone'`, [u.userId])).rows[0].status).toBe('failed');
     } finally {
       relayMode = 'ok';
     }

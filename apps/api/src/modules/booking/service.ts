@@ -1,9 +1,9 @@
+import { notifyUser } from '../../lib/notify.js';
 import type pg from 'pg';
 import { withTx, type Db, type Executor } from '../../db/pool.js';
 import { audit, systemActor, type ActorContext } from '../../lib/audit.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../lib/errors.js';
 import { fromUnits, toUnits } from '../../lib/money.js';
-import { enqueueMessage } from '../../lib/outbox.js';
 import { confirmHold, releaseBlock, reserve } from '../availability/engine.js';
 import { currentTerms } from '../auth/service.js';
 import { getSetting } from '../settings/registry.js';
@@ -35,12 +35,7 @@ export async function lockBooking(c: Executor, id: string): Promise<BookingRow> 
 }
 
 export async function notify(c: Executor, userId: string, templateKey: string, payload: Record<string, unknown>) {
-  const u = (await c.query<{ phone: string | null; email: string | null; preferred_language: string }>(
-    'SELECT phone, email, preferred_language FROM users WHERE id = $1', [userId])).rows[0];
-  if (!u) return;
-  const target = u.phone ?? u.email;
-  if (!target) return;
-  await enqueueMessage(c, { channel: u.phone ? 'sms' : 'email', recipientUserId: userId, target, templateKey, language: u.preferred_language, payload });
+  await notifyUser(c, userId, templateKey, payload);
 }
 
 async function providerUserId(c: Executor, providerId: string): Promise<string> {

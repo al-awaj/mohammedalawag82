@@ -4,6 +4,7 @@ import { withTx, type Db, type Executor } from '../../db/pool.js';
 import { audit, type ActorContext } from '../../lib/audit.js';
 import { AppError, badRequest, conflict, mapUniqueViolation, notFound, unauthorized } from '../../lib/errors.js';
 import { enqueueMessage } from '../../lib/outbox.js';
+import { notifyUser } from '../../lib/notify.js';
 import { getDummyHash, hashPassword, verifyPassword } from '../../lib/password.js';
 import { randomOtp, randomToken, sha256, type TokenService } from '../../lib/tokens.js';
 
@@ -80,6 +81,7 @@ export class AuthService {
         after: { kind: input.accountType, countryCode: input.countryCode, phone: input.phone, email: input.email ?? null },
       });
       await this.issueCode(c, id, 'verify_phone', 'sms', input.phone, input.preferredLanguage);
+      await notifyUser(c, id, input.accountType === 'provider' ? 'account.welcome_provider' : 'account.welcome', { name: input.fullName });
       return id;
     });
     return { userId, ...(await this.createSession(this.db, userId, input.accountType, ctx)) };

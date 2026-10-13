@@ -4,7 +4,8 @@ import { withTx } from '../../db/pool.js';
 import { audit, type ActorContext } from '../../lib/audit.js';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/errors.js';
 import { fromUnits, toUnits } from '../../lib/money.js';
-import { enqueueMessage } from '../../lib/outbox.js';
+import { notifyUsers } from '../../lib/notify.js';
+import { earningNotice } from '../finance/earnings.js';
 import { post, systemAccount } from '../finance/ledger.js';
 import { refundableFor, requestRefunds } from '../finance/refunds.js';
 
@@ -54,13 +55,6 @@ async function partyUsers(c: Executor, d: DisputeRow): Promise<string[]> {
   return [b.customer_id, b.provider_user];
 }
 
-async function notifyUsers(c: Executor, userIds: string[], templateKey: string, payload: Record<string, unknown>) {
-  for (const id of userIds) {
-    const u = (await c.query<{ phone: string | null; email: string | null; preferred_language: string }>('SELECT phone, email, preferred_language FROM users WHERE id = $1', [id])).rows[0];
-    const target = u?.phone ?? u?.email;
-    if (u && target) await enqueueMessage(c, { channel: u.phone ? 'sms' : 'email', recipientUserId: id, target, templateKey, language: u.preferred_language, payload });
-  }
-}
 
 const DISPUTABLE: string[] = ['confirmed', 'in_progress', 'completed', 'no_show', 'cancelled_by_customer', 'cancelled_by_provider', 'cancelled_by_admin'];
 
@@ -150,7 +144,11 @@ export async function staffAction(db: Db, disputeId: string, action: 'start_revi
         await event(c, d.id, sctx, 'assigned', { note: opts.assignee ?? null });
         break;
       }
-      case 'start_review': need(['new']); await setStatus(c, d, 'under_review', sctx, 'review_started', null); break;
+      case 'start_review':
+        need(['new']);
+        await setStatus(c, d, 'under_review', sctx, 'review_started', null);
+        await notifyUsers(c, await partyUsers(c, d), 'dispute.updated', { disputeId: d.id, number: d.number, note: 'under_review' });
+        break;
       case 'request_info':
       case 'request_response': {
         need(['new', 'under_review', 'deciding']);
@@ -210,6 +208,7 @@ export async function holdEarning(db: Db, disputeId: string, amount: string, ctx
     await c.query('UPDATE disputes SET held_amount = $2 WHERE id = $1', [d.id, amount]);
     await c.query(`UPDATE provider_earnings SET status = 'on_hold_dispute', status_reason = $2 WHERE id = $1`, [e.id, `held by ${d.number}`]);
     await c.query(`INSERT INTO provider_earning_events (earning_id, from_status, to_status, actor_id, reason) VALUES ($1, $2, 'on_hold_dispute', $3, $4)`, [e.id, e.status, ctx.actorId, d.number]);
+    await earningNotice(c, e.id, 'on_hold_dispute');
     await event(c, d.id, { ...ctx, role: 'staff' }, 'earning_held', { note: amount });
     await audit(c, ctx, { action: 'dispute.earning_held', entityType: 'dispute', entityId: d.id, after: { amount } });
     return { heldAmount: amount };
@@ -232,6 +231,7 @@ async function releaseHold(c: Executor, d: DisputeRow, ctx: ActorContext) {
   if (e.status === 'on_hold_dispute') {
     await c.query(`UPDATE provider_earnings SET status = 'due', status_reason = $2 WHERE id = $1`, [e.id, `released by ${d.number}`]);
     await c.query(`INSERT INTO provider_earning_events (earning_id, from_status, to_status, actor_id, reason) VALUES ($1, 'on_hold_dispute', 'due', $2, $3)`, [e.id, ctx.actorId, d.number]);
+    await earningNotice(c, e.id, 'due');
   }
   await event(c, d.id, { ...ctx, role: 'staff' }, 'hold_released', { note: d.held_amount });
 }

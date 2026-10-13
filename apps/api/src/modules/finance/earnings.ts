@@ -2,6 +2,7 @@ import type { Executor } from '../../db/pool.js';
 import { audit, type ActorContext } from '../../lib/audit.js';
 import { conflict, notFound } from '../../lib/errors.js';
 import { fromUnits, min, percentOf, roundToMinor, toUnits } from '../../lib/money.js';
+import { notifyUser } from '../../lib/notify.js';
 import { getSetting } from '../settings/registry.js';
 import { post, systemAccount } from './ledger.js';
 
@@ -10,6 +11,19 @@ type EarningStatus = 'not_due' | 'under_review' | 'due' | 'on_hold_dispute' | 'r
 async function setStatus(c: Executor, id: string, from: string, to: EarningStatus, actorId: string | null, reason: string | null, extra = '') {
   await c.query(`UPDATE provider_earnings SET status = $2, status_reason = $3 ${extra} WHERE id = $1`, [id, to, reason]);
   await c.query('INSERT INTO provider_earning_events (earning_id, from_status, to_status, actor_id, reason) VALUES ($1, $2, $3, $4, $5)', [id, from, to, actorId, reason]);
+  await earningNotice(c, id, to);
+}
+
+/** Statuses the provider is told about (settlement and payout have their own notices). */
+const NOTICE_STATUSES = ['due', 'under_review', 'on_hold_dispute', 'settlement_failed', 're_reviewed'];
+
+/** Tells the provider their earning for a booking changed (clause 53). */
+export async function earningNotice(c: Executor, earningId: string, status: string) {
+  if (!NOTICE_STATUSES.includes(status)) return;
+  const r = (await c.query<{ user_id: string; number: string; net: string; currency: string }>(
+    `SELECT p.user_id, b.number, e.net_amount::text AS net, e.currency_code AS currency
+       FROM provider_earnings e JOIN providers p ON p.id = e.provider_id JOIN bookings b ON b.id = e.booking_id WHERE e.id = $1`, [earningId])).rows[0];
+  if (r) await notifyUser(c, r.user_id, 'earning.updated', { earningId, number: r.number, status, amount: r.net, currency: r.currency.trim() });
 }
 
 /**
