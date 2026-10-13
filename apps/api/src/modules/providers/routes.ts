@@ -167,7 +167,8 @@ export async function providerRoutes(app: App, deps: Deps) {
   });
 
   app.post('/admin/provider-applications/:id/actions', {
-    onRequest: deps.authenticate,
+    // The exact permission depends on the action and country (checked in the handler); staff only before validation.
+    onRequest: deps.authenticate, preValidation: requireKind('staff'),
     schema: {
       tags: ['admin:providers'], security: [{ bearer: [] }], params: idParams,
       body: z.object({ action: z.enum(Object.keys(STAFF_TRANSITIONS) as [StaffAction, ...StaffAction[]]), reason: reasonSchema.optional() }),

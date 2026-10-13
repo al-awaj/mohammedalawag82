@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { App, Deps } from '../../deps.js';
-import { actorOf, assertCan, can, countryScope, requirePermission, requireUser } from '../../auth/guard.js';
+import { actorOf, assertCan, can, countryScope, requireKind, requirePermission, requireUser } from '../../auth/guard.js';
 import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
 import { badRequest, conflict, mapUniqueViolation, notFound } from '../../lib/errors.js';
@@ -383,7 +383,8 @@ export async function catalogAdminRoutes(app: App, deps: Deps) {
   });
 
   app.post('/admin/services/:id/actions', {
-    ...auth,
+    // The exact permission depends on the action and country (checked in the handler); staff only before validation.
+    ...auth, preValidation: requireKind('staff'),
     schema: {
       tags: ['admin:catalog'], security: sec, params: idParams,
       body: z.object({ action: z.enum(Object.keys(MODERATION) as [ModerationAction, ...ModerationAction[]]), reason: reasonSchema.optional() }),

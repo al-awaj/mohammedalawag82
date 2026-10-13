@@ -69,8 +69,11 @@ export async function financeRoutes(app: App, deps: Deps) {
     return reply.status(r.replayed ? 200 : 201).send(p);
   });
 
-  app.get('/orders/:id/payments', { ...customer, schema: { tags: ['payments'], security: sec, params: idParams } }, async (req) =>
-    (await db.query(`SELECT ${PAYMENT_COLUMNS} FROM payments p WHERE p.order_id = $1 AND p.customer_id = $2 ORDER BY p.created_at`, [req.params.id, requireUser(req).id])).rows);
+  app.get('/orders/:id/payments', { ...customer, schema: { tags: ['payments'], security: sec, params: idParams } }, async (req) => {
+    const customerId = requireUser(req).id;
+    if (!(await db.query('SELECT 1 FROM orders WHERE id = $1 AND customer_id = $2', [req.params.id, customerId])).rowCount) throw notFound();
+    return (await db.query(`SELECT ${PAYMENT_COLUMNS} FROM payments p WHERE p.order_id = $1 AND p.customer_id = $2 ORDER BY p.created_at`, [req.params.id, customerId])).rows;
+  });
 
   app.get('/payments/:id', { ...customer, schema: { tags: ['payments'], security: sec, params: idParams } }, async (req) => {
     const p = (await db.query(`SELECT ${PAYMENT_COLUMNS} FROM payments p WHERE p.id = $1 AND p.customer_id = $2`, [req.params.id, requireUser(req).id])).rows[0];

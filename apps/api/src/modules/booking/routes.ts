@@ -277,11 +277,13 @@ export async function bookingRoutes(app: App, deps: Deps) {
   app.post('/bookings/:id/cancel', { ...customer, schema: { tags: ['bookings'], security: sec, params: idParams, body: z.object({ reason: reasonSchema }) } },
     async (req) => cancelBooking(db, req.params.id, 'customer', req.body.reason, actorOf(req), { customerId: requireUser(req).id }));
 
-  app.get('/bookings/:id/refunds', { ...customer, schema: { tags: ['bookings'], security: sec, params: idParams } }, async (req) =>
-    (await db.query(
+  app.get('/bookings/:id/refunds', { ...customer, schema: { tags: ['bookings'], security: sec, params: idParams } }, async (req) => {
+    if (!(await db.query('SELECT 1 FROM bookings WHERE id = $1 AND customer_id = $2', [req.params.id, requireUser(req).id])).rowCount) throw notFound();
+    return (await db.query(
       `SELECT r.id, r.number, r.amount, r.currency_code AS currency, r.status, r.source, r.reason, r.created_at AS "createdAt", r.executed_at AS "completedAt"
          FROM refunds r JOIN bookings b ON b.id = r.booking_id WHERE r.booking_id = $1 AND b.customer_id = $2 ORDER BY r.created_at`,
-      [req.params.id, requireUser(req).id])).rows);
+      [req.params.id, requireUser(req).id])).rows;
+  });
 
   // ---------------- Provider panel ----------------
   app.get('/provider/bookings', {
