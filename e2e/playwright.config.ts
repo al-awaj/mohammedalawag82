@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { defineConfig } from '@playwright/test';
 import { E2E, apiUrl } from './env';
 
@@ -18,7 +19,8 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   reporter: [['list']],
   use: {
-    launchOptions: { executablePath: process.env.PW_CHROMIUM ?? '/opt/pw-browsers/chromium' },
+    // A preinstalled Chromium when present (PW_CHROMIUM or the sandbox path), else Playwright's own (CI).
+    launchOptions: { executablePath: process.env.PW_CHROMIUM ?? (existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined) },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
