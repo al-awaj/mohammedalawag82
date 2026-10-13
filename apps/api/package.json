@@ -10,6 +10,7 @@
     "seed:reference": "node --env-file-if-exists=.env --import tsx src/scripts/seed-reference.ts",
     "create-admin": "node --env-file-if-exists=.env --import tsx src/scripts/create-admin.ts",
     "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:perf": "vitest run -c vitest.perf.config.ts",
     "backup": "node --env-file-if-exists=.env --import tsx src/scripts/backup.ts",

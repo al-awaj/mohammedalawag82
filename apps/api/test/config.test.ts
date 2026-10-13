@@ -25,6 +25,10 @@ describe('configuration', () => {
     expect(() => loadConfig({ ...good, NODE_ENV: 'development', JWT_SECRET: 'change-me-change-me-change-me-change-me', CORS_ORIGINS: 'http://localhost:3001' })).not.toThrow();
   });
 
+  it('treats empty optional storage settings as unset (as compose passes them)', () => {
+    expect(loadConfig({ ...good, STORAGE_DRIVER: '', S3_ENDPOINT: '', S3_BUCKET: '' }).STORAGE_DRIVER).toBe('local');
+  });
+
   it('requires a bucket for object storage and both keys or neither', () => {
     expect(() => loadConfig({ ...good, STORAGE_DRIVER: 's3' })).toThrow(/S3_BUCKET/);
     expect(() => loadConfig({ ...good, STORAGE_DRIVER: 's3', S3_BUCKET: 'b', S3_ACCESS_KEY_ID: 'k' })).toThrow(/S3_SECRET_ACCESS_KEY/);

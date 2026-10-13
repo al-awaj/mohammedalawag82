@@ -44,8 +44,12 @@ const schema = z.object({
 
 export type Config = z.infer<typeof schema>;
 
+/** Optional settings that deployment tools often pass as empty strings when unset. */
+const EMPTY_MEANS_UNSET = ['S3_BUCKET', 'S3_ENDPOINT', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_PREFIX', 'S3_REGION', 'S3_FORCE_PATH_STYLE', 'STORAGE_DRIVER'];
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = schema.safeParse(env);
+  const cleaned = Object.fromEntries(Object.entries(env).filter(([k, v]) => !(EMPTY_MEANS_UNSET.includes(k) && v === '')));
+  const parsed = schema.safeParse(cleaned);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`Invalid configuration: ${issues}`);
