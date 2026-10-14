@@ -7,6 +7,7 @@ import { localized } from '@events/shared';
 import { useApp, useGet, useT, useTr } from '../client';
 import { Button, ErrorBox, Modal, Notice } from './basics';
 import { Form } from './forms';
+import { Sparkles } from 'lucide-react';
 import { LangSwitch } from './shell';
 
 type Country = { id: string; code: string; name: Record<string, string>; phonePrefix: string };
@@ -30,7 +31,8 @@ export function RegisterPanel({ title, termsKind, home = '/', loginHref = '/logi
   return (
     <div className="auth">
       <div className="auth-card">
-        <div className="row between"><h1>{title}</h1><LangSwitch /></div>
+        <div className="row between"><span className="brand-mark"><Sparkles className="ico" aria-hidden /></span><LangSwitch /></div>
+        <h1>{title}</h1>
         <ErrorBox error={error} />
         <label className="field">
           <span>{t('country')} *</span>

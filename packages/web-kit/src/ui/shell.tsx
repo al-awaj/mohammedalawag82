@@ -1,20 +1,21 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
+import { Languages, LogOut, Menu, Sparkles } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useApp, useSession, useT, type SessionUser } from '../client';
 import { Button, ErrorBox, Loading } from './basics';
 import { Form, type FieldSpec } from './forms';
 
 type L = { ar: string; en: string };
-export interface NavItem { href: string; label: L; perm?: string | string[] }
+export interface NavItem { href: string; label: L; perm?: string | string[]; icon?: ComponentType<{ className?: string; 'aria-hidden'?: boolean }> }
 export interface NavGroup { label: L; items: NavItem[] }
 
 export function LangSwitch() {
   const { lang, setLang } = useApp();
   const t = useT();
-  return <Button variant="ghost" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{t('switchLang')}</Button>;
+  return <Button variant="ghost" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}><Languages className="ico" aria-hidden />{t('switchLang')}</Button>;
 }
 
 export function useLogout(to = '/login') {
@@ -50,25 +51,28 @@ export function Shell({ brand, nav, kinds, children, footer }: { brand: ReactNod
   return (
     <div className={`shell ${open ? 'nav-open' : ''}`}>
       <aside className="sidebar" aria-label="navigation">
-        <div className="brand">{brand}</div>
+        <div className="brand"><span className="brand-mark"><Sparkles className="ico" aria-hidden /></span>{brand}</div>
         <nav>
           {groups.map((g) => (
             <div key={g.label.en} className="nav-group">
               <div className="nav-group-label">{g.label[lang]}</div>
               {g.items.map((i) => (
-                <Link key={i.href} href={i.href} className={path === i.href || (i.href !== '/' && path.startsWith(`${i.href}/`)) ? 'nav-link active' : 'nav-link'}>{i.label[lang]}</Link>
+                <Link key={i.href} href={i.href} className={path === i.href || (i.href !== '/' && path.startsWith(`${i.href}/`)) ? 'nav-link active' : 'nav-link'}>
+                  {i.icon && <i.icon className="ico" aria-hidden />}{i.label[lang]}
+                </Link>
               ))}
             </div>
           ))}
         </nav>
       </aside>
+      <div className="nav-backdrop" onClick={() => setOpen(false)} aria-hidden />
       <div className="main">
         <header className="topbar">
-          <button type="button" className="icon-btn menu-btn" aria-label="menu" onClick={() => setOpen(!open)}>☰</button>
+          <button type="button" className="icon-btn menu-btn" aria-label="menu" onClick={() => setOpen(!open)}><Menu className="ico" aria-hidden /></button>
           <div className="grow" />
-          <span className="muted">{user.fullName}</span>
           <LangSwitch />
-          <Button variant="ghost" onClick={logout}>{t('logout')}</Button>
+          <span className="user-chip"><span className="avatar" aria-hidden>{user.fullName.trim().charAt(0)}</span><span className="user-name">{user.fullName}</span></span>
+          <Button variant="ghost" onClick={logout}><LogOut className="ico" aria-hidden />{t('logout')}</Button>
         </header>
         <main className="content">{children}</main>
         {footer}
@@ -91,7 +95,8 @@ export function LoginPanel({ title, home = '/', extra }: { title: ReactNode; hom
   return (
     <div className="auth">
       <div className="auth-card">
-        <div className="row between"><h1>{title}</h1><LangSwitch /></div>
+        <div className="row between"><span className="brand-mark"><Sparkles className="ico" aria-hidden /></span><LangSwitch /></div>
+        <h1>{title}</h1>
         <ErrorBox error={error} />
         <Form fields={fields} busy={busy} submitLabel={t('login')} onSubmit={async (v) => {
           setBusy(true); setError(null);

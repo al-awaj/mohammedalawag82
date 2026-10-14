@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { AppProviders } from '@events/web-kit/client';
+import '@events/web-kit/fonts.css';
 import '@events/web-kit/styles.css';
 
 export const metadata: Metadata = { title: `لوحة الإدارة — Admin${process.env.NEXT_PUBLIC_BRAND_AR ? ` — ${process.env.NEXT_PUBLIC_BRAND_AR}` : ''}`, robots: { index: false, follow: false } };

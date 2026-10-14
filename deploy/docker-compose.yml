@@ -73,6 +73,9 @@ services:
     <<: *webapp
     image: ${IMAGE_PREFIX:-events}/web:${IMAGE_TAG:-latest}
     build: { context: .., target: webapp, args: { APP: web, NEXT_PUBLIC_BRAND_AR: "${BRAND_AR:-}", NEXT_PUBLIC_BRAND_EN: "${BRAND_EN:-}" } }
+    environment:
+      API_URL: http://api:3000
+      PROVIDER_PANEL_URL: https://${PROVIDER_DOMAIN}
 
   # TLS termination with automatic certificates; the only service published to the internet.
   caddy:

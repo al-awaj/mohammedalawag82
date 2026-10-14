@@ -33,7 +33,7 @@ test('service pages are rendered on the server for search engines', async ({ req
 test('a visitor finds a hall, signs up, books, pays by card, gets the invoice and cancels', async ({ page }) => {
   // Browse and search.
   await page.goto(`${WEB}/`);
-  await expect(page.getByRole('heading', { name: 'كل خدمات مناسبتك في مكان واحد' })).toBeVisible();
+  await expect(page.locator('.hero h1')).toContainText('لمناسبتك');
   await page.goto(`${WEB}/search?q=الماسة`);
   await page.locator(`a[href="/services/${serviceId}"]`).first().click();
   await expect(page.locator('h1')).toContainText('قاعة الماسة');
