@@ -1,0 +1,29 @@
+{
+  // Terminal → Run Task… → "Start platform" starts the API, the worker and the three web apps, each in its own terminal.
+  "version": "2.0.0",
+  "inputs": [
+    { "id": "pgsql", "type": "promptString", "description": "PostgreSQL folder (contains bin and data)", "default": "C:\\pgsql" }
+  ],
+  "tasks": [
+    {
+      "label": "Start PostgreSQL (portable, Windows)",
+      "type": "shell",
+      "command": "& '${input:pgsql}\\bin\\pg_ctl.exe' -D '${input:pgsql}\\data' -l '${input:pgsql}\\log.txt' start",
+      "problemMatcher": []
+    },
+    { "label": "API", "type": "shell", "command": "npm run dev", "options": { "cwd": "${workspaceFolder}/apps/api" }, "isBackground": true, "problemMatcher": [], "presentation": { "group": "platform", "panel": "dedicated" } },
+    { "label": "Worker", "type": "shell", "command": "npm run worker", "options": { "cwd": "${workspaceFolder}/apps/api" }, "isBackground": true, "problemMatcher": [], "presentation": { "group": "platform", "panel": "dedicated" } },
+    { "label": "Admin panel (3001)", "type": "shell", "command": "npm run dev:admin", "isBackground": true, "problemMatcher": [], "presentation": { "group": "platform", "panel": "dedicated" } },
+    { "label": "Provider panel (3002)", "type": "shell", "command": "npm run dev:provider", "isBackground": true, "problemMatcher": [], "presentation": { "group": "platform", "panel": "dedicated" } },
+    { "label": "Website (3003)", "type": "shell", "command": "npm run dev:web", "isBackground": true, "problemMatcher": [], "presentation": { "group": "platform", "panel": "dedicated" } },
+    {
+      "label": "Start platform",
+      "dependsOn": ["API", "Worker", "Admin panel (3001)", "Provider panel (3002)", "Website (3003)"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    { "label": "Database: apply migrations", "type": "shell", "command": "npm run migrate", "options": { "cwd": "${workspaceFolder}/apps/api" }, "problemMatcher": [] },
+    { "label": "Typecheck everything", "type": "shell", "command": "npm run typecheck", "problemMatcher": ["$tsc"] },
+    { "label": "API tests", "type": "shell", "command": "npm test", "options": { "cwd": "${workspaceFolder}/apps/api" }, "problemMatcher": [] }
+  ]
+}

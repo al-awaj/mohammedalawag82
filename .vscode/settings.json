@@ -1,0 +1,5 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "files.eol": "\n",
+  "search.exclude": { "**/.next": true, "**/dist": true, "**/dist-web": true }
+}
