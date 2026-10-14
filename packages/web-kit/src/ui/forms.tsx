@@ -167,7 +167,7 @@ export function Form({ fields, onSubmit, submitLabel, busy, children }: {
     if (!Object.keys(errors).length) onSubmit(values);
   };
   return (
-    <form className="form" onSubmit={submit} noValidate>
+    <form className="form" method="post" onSubmit={submit} noValidate>
       {fields.map((f) => <FieldInput key={f.name} field={f} value={state[f.name]} error={errors[f.name]} onChange={(v) => setState((s) => ({ ...s, [f.name]: v }))} />)}
       {children}
       <div className="form-actions"><button type="submit" className="btn btn-primary" disabled={busy}>{submitLabel ?? t('save')}</button></div>

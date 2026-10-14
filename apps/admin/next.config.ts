@@ -4,6 +4,10 @@ import type { NextConfig } from 'next';
 const config: NextConfig = {
   transpilePackages: ['@events/shared', '@events/web-kit'],
   poweredByHeader: false,
+  // Development only: let the dev server answer pages opened as 127.0.0.1 or a local-network address, not just localhost.
+  allowedDevOrigins: ['127.0.0.1', '192.168.*.*', '10.*.*.*', '172.*.*.*'],
+  // Do not generate AGENTS.md in the app folders when the dev server starts.
+  agentRules: false,
   // Container images use the self-contained server output (Dockerfile sets NEXT_STANDALONE=1).
   ...(process.env.NEXT_STANDALONE ? { output: 'standalone' as const, outputFileTracingRoot: path.resolve(process.cwd(), '../..') } : {}),
   async headers() {
