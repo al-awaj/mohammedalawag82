@@ -1,9 +1,10 @@
+import { apiBase } from '@events/web-kit/bff';
 import 'server-only';
 import { cookies, headers } from 'next/headers';
 import type { Lang } from '@events/shared';
 
 /** Server-side reads of public catalog data (no session needed), in the visitor's language. */
-const API = process.env.API_URL ?? 'http://localhost:3000';
+const API = apiBase(process.env.API_URL ?? 'http://localhost:3000');
 
 export async function visitor(): Promise<{ lang: Lang; country: string | null }> {
   const c = await cookies();

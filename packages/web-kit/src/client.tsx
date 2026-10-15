@@ -1,5 +1,6 @@
 'use client';
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { ApiError, createClient, type ApiClient, type Lang, type Query } from '@events/shared';
 import { COMMON, type CommonKey } from './strings';
@@ -16,18 +17,44 @@ export function AppProviders({ lang: initial, children }: { lang: Lang; children
     },
   }));
   const api = useMemo(() => createClient({ baseUrl: '/bff', lang: () => lang, headers: () => ({ 'x-csrf': '1' }) }), [lang]);
+  const router = useRouter();
   const setLang = (l: Lang) => {
     document.cookie = `lang=${l}; Path=/; Max-Age=31536000; SameSite=Lax`;
     setLangState(l);
     document.documentElement.lang = l;
     document.documentElement.dir = l === 'ar' ? 'rtl' : 'ltr';
     qc.invalidateQueries();
+    // Server-rendered parts of the page are rendered in the cookie's language: fetch them again.
+    router.refresh();
   };
   return (
     <AppCtx.Provider value={{ lang, api, setLang }}>
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      <QueryClientProvider client={qc}><NavProgress />{children}</QueryClientProvider>
     </AppCtx.Provider>
   );
+}
+
+/** A thin bar at the top from the click on an internal link until the new page is shown. */
+function NavProgress() {
+  const path = usePathname();
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setBusy(false), [path]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.('a');
+      if (!a || a.target || a.hasAttribute('download') || !a.href) return;
+      const u = new URL(a.href, window.location.href);
+      if (u.origin !== window.location.origin || u.pathname.startsWith('/bff') || u.pathname === window.location.pathname) return;
+      setBusy(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => setBusy(false), 20_000);
+    };
+    document.addEventListener('click', onClick);
+    return () => { document.removeEventListener('click', onClick); clearTimeout(timer); };
+  }, []);
+  return busy ? <div className="nav-progress" role="progressbar" aria-label="loading" /> : null;
 }
 
 export function useApp(): Ctx {

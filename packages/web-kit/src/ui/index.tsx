@@ -5,3 +5,4 @@ export * from './shell';
 export * from './auth';
 export * from './party';
 export * from './calendar';
+export * from './status';

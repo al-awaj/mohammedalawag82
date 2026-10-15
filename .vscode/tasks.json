@@ -17,6 +17,14 @@
     { "label": "Provider panel (3002)", "type": "shell", "command": "npm run dev:provider", "isBackground": true, "problemMatcher": [], "presentation": { "group": "platform", "panel": "dedicated" } },
     { "label": "Website (3003)", "type": "shell", "command": "npm run dev:web", "isBackground": true, "problemMatcher": [], "presentation": { "group": "platform", "panel": "dedicated" } },
     {
+      "label": "Start platform (fast, production build)",
+      "type": "shell",
+      "command": "npm run start:local",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" }
+    },
+    {
       "label": "Start platform",
       "dependsOn": ["API", "Worker", "Admin panel (3001)", "Provider panel (3002)", "Website (3003)"],
       "dependsOrder": "parallel",
