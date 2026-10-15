@@ -2,22 +2,29 @@
 import { useState } from 'react';
 import { localized } from '@events/shared';
 import { useApp, useGet, useTr } from '@events/web-kit/client';
-import { ActionButton, DataTable, DateTime, ErrorBox, Filters, Loading, Notice, Page, Text } from '@events/web-kit/ui';
+import {
+  ActionButton, CalendarView, DataTable, DateTime, ErrorBox, Filters, Loading, Notice, Page, Tabs, Text, addDays, isoDay, viewRange,
+  type CalendarBlock, type CalendarMode,
+} from '@events/web-kit/ui';
 
-type Block = { id: string; serviceId: string; serviceTitle: Record<string, string>; kind: string; start: string; end: string; units: number; bookingRef: string | null; reason: string | null; internalNotes: string | null; expiresAt: string | null };
+type Block = CalendarBlock & { serviceId: string; internalNotes: string | null; expiresAt: string | null };
 const KIND: Record<string, { ar: string; en: string }> = {
   hold: { ar: 'حجز مؤقت (بانتظار الدفع)', en: 'Temporary hold (awaiting payment)' }, booking: { ar: 'حجز مؤكد', en: 'Confirmed booking' },
   external: { ar: 'حجز خارج المنصة', en: 'Booked outside the platform' }, closed: { ar: 'إغلاق', en: 'Closed' },
 };
-const iso = (d: Date) => d.toISOString().slice(0, 10);
 
+/** The provider's calendar: month/week/day views with preparation and cleanup buffers, a list, and external bookings or closures. */
 export default function Calendar() {
   const tr = useTr();
   const { lang } = useApp();
   const services = (useGet<{ id: string; title: Record<string, string> }[]>('/v1/provider/services').data ?? []).map((s) => ({ value: s.id, label: localized(s.title, lang) }));
-  const now = new Date();
-  const [f, setF] = useState<Record<string, string>>({ from: iso(now), to: iso(new Date(now.getTime() + 60 * 86400000)) });
-  const { data, error, isLoading } = useGet<Block[]>('/v1/provider/calendar', f);
+  const today = isoDay(new Date());
+  const [mode, setMode] = useState<CalendarMode>('month');
+  const [anchor, setAnchor] = useState(today);
+  const [view, setView] = useState<'calendar' | 'list'>('calendar');
+  const [f, setF] = useState<Record<string, string>>({});
+  const range = view === 'calendar' ? viewRange(mode, anchor) : { from: anchor, to: addDays(anchor, 60) };
+  const { data, error, isLoading } = useGet<Block[]>('/v1/provider/calendar', { ...f, ...range });
   return (
     <Page title={tr({ ar: 'التقويم', en: 'Calendar' })} actions={
       <ActionButton variant="primary" label={tr({ ar: 'حجز خارجي أو إغلاق', en: 'External booking or closure' })}
@@ -33,12 +40,16 @@ export default function Calendar() {
         run={(api, { serviceId, ...v }) => api.post(`/v1/provider/services/${serviceId}/blocks`, v)} />
     }>
       <Filters value={f} onChange={(v) => setF({ ...f, ...v })} specs={[
-        { name: 'from', label: tr({ ar: 'من', en: 'From' }), type: 'date' }, { name: 'to', label: tr({ ar: 'إلى', en: 'To' }), type: 'date' },
         { name: 'serviceId', label: tr({ ar: 'الخدمة', en: 'Service' }), type: 'select', options: services },
+        { name: 'kinds', label: tr({ ar: 'النوع', en: 'Kind' }), type: 'select', options: Object.entries(KIND).map(([value, label]) => ({ value, label })) },
       ]} />
-      <Notice>{tr({ ar: 'المواعيد المحجوزة مؤقتًا تُفتح تلقائيًا إذا لم يكتمل الدفع في الوقت المحدد.', en: 'Temporarily held slots reopen automatically if payment is not completed in time.' })}</Notice>
+      <Notice>{tr({ ar: 'المواعيد المحجوزة مؤقتًا تُفتح تلقائيًا إذا لم يكتمل الدفع في الوقت المحدد. المنطقة المخططة حول الحجز هي وقت التجهيز والتنظيف لنوع الخدمة.', en: 'Temporarily held slots reopen automatically if payment is not completed in time. The hatched band around a booking is the service type\'s preparation and cleanup time.' })}</Notice>
+      <Tabs value={view} onChange={setView} tabs={[{ id: 'calendar', label: tr({ ar: 'عرض التقويم', en: 'Calendar' }) }, { id: 'list', label: tr({ ar: 'قائمة', en: 'List' }) }]} />
       <ErrorBox error={error} />
-      {isLoading ? <Loading /> : (
+      {isLoading ? <Loading /> : view === 'calendar' ? (
+        <CalendarView mode={mode} anchor={anchor} today={today} blocks={data ?? []} onMode={setMode} onAnchor={setAnchor}
+          kindLabel={(k) => tr(KIND[k] ?? { ar: k, en: k })} blockHref={(b) => (b.kind === 'booking' || b.kind === 'hold') && b.bookingRef ? `/bookings/${b.bookingRef}` : null} />
+      ) : (
         <DataTable rows={data ?? []} columns={[
           { key: 'start', label: { ar: 'من', en: 'From' }, render: (b) => <DateTime value={b.start} /> },
           { key: 'end', label: { ar: 'إلى', en: 'To' }, render: (b) => <DateTime value={b.end} /> },

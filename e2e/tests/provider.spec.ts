@@ -134,6 +134,11 @@ test('a provider signs up, applies with documents, gets approved, lists a servic
   });
   const blocks = await db().query(`SELECT 1 FROM calendar_blocks WHERE service_id = $1 AND kind = 'external'`, [serviceId]);
   expect(blocks.rowCount).toBe(1);
+  await expect(page.getByTestId('calendar')).toBeVisible();
+  await page.getByRole('tab', { name: 'أسبوع' }).click();
+  await expect(page.locator('[data-testid="calendar"][data-mode="week"]')).toBeVisible();
+  await page.getByRole('tab', { name: 'يوم' }).click();
+  await expect(page.locator('[data-testid="calendar"][data-mode="day"]')).toBeVisible();
 
   // Every provider screen loads without errors.
   for (const p of ['/', '/notifications', '/help', '/services', '/calendar', '/policies', '/promotions', '/reviews', '/bookings', '/disputes', '/earnings', '/reports', '/documents', '/profile', '/onboarding']) {

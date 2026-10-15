@@ -31,7 +31,8 @@ const toMinutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 
 /** Calendar rows for staff and owners: kinds and internal notes, never customer personal data. */
 const BLOCK_COLUMNS = `b.id, b.service_id AS "serviceId", s.title AS "serviceTitle", b.rental_item_id AS "rentalItemId", b.kind,
   lower(b.period) AS start, upper(b.period) AS "end", lower(b.blocked_period) AS "blockedStart", upper(b.blocked_period) AS "blockedEnd",
-  b.units, b.expires_at AS "expiresAt", b.booking_ref AS "bookingRef", b.reason, b.internal_notes AS "internalNotes", b.created_at AS "createdAt"`;
+  b.units, b.expires_at AS "expiresAt", b.booking_ref AS "bookingRef", b.reason, b.internal_notes AS "internalNotes", b.created_at AS "createdAt",
+  co.timezone`;
 
 export async function availabilityRoutes(app: App, deps: Deps) {
   const { db } = deps;
