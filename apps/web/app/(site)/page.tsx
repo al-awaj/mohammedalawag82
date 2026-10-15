@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, CalendarCheck, CalendarDays, CreditCard, MapPin,
 import { localized } from '@events/shared';
 import { ServiceCards, type ServiceCard } from '@/lib/cards';
 import { categoryIcon, categoryTone } from '@/lib/icons';
-import { currentCountry, publicGet, visitor } from '@/lib/server';
+import { currentCountry, publicGet, visitor, displayRates } from '@/lib/server';
 
 type Category = { id: string; slug: string; name: Record<string, string>; description: Record<string, string> | null; imageUrl: string | null; types: { id: string; code: string; name: Record<string, string> }[]; children: Category[] };
 
@@ -85,7 +85,7 @@ export default async function Home() {
             <div><h2>{ar ? 'أضيف حديثًا' : 'Recently added'}</h2><p className="muted">{ar ? 'أحدث الخدمات المنشورة على المنصة' : 'The latest services on the platform'}</p></div>
             {!!latest?.total && <Link href="/search" className="link-more">{ar ? 'عرض الكل' : 'View all'}<Arrow className="ico" aria-hidden /></Link>}
           </div>
-          {latest?.items.length ? <ServiceCards items={latest.items} lang={lang} /> : <div className="empty">{ar ? 'لا توجد خدمات منشورة بعد.' : 'No services published yet.'}</div>}
+          {latest?.items.length ? <ServiceCards items={latest.items} lang={lang} display={await displayRates(latest.items.map((x) => x.currency), lang)} /> : <div className="empty">{ar ? 'لا توجد خدمات منشورة بعد.' : 'No services published yet.'}</div>}
         </section>
 
         <section className="section">

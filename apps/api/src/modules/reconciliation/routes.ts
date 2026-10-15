@@ -6,6 +6,7 @@ import { audit } from '../../lib/audit.js';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { idParams, paginationQuery, reasonSchema } from '../common.js';
 import { consistencyChecks, runReconciliation } from './service.js';
+import { linesFromCamt053, linesFromCsv } from './import.js';
 
 const sec = [{ bearer: [] }];
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -40,6 +41,28 @@ export async function reconciliationRoutes(app: App, deps: Deps) {
       return out;
     });
     return reply.status(201).send(r);
+  });
+
+  /** Reads a statement file into lines for review; nothing is stored until the run is created with them. */
+  app.post('/admin/reconciliation/parse', {
+    ...staff('finance.reconcile'), schema: { tags: ['reconciliation'], security: sec, consumes: ['multipart/form-data'] },
+  }, async (req) => {
+    const file = await req.file({ limits: { fileSize: 5 * 1024 * 1024 } });
+    if (!file) throw badRequest('VALIDATION_FAILED', [{ path: '/file', message: 'file is required' }]);
+    const field = (n: string) => { const f = file.fields[n] as { value?: unknown } | undefined; return typeof f?.value === 'string' && f.value.trim() ? f.value.trim() : undefined; };
+    const text = (await file.toBuffer()).toString('utf8');
+    const format = field('format') ?? (/<\?xml|<Document/.test(text.slice(0, 500)) ? 'camt053' : 'csv');
+    if (format === 'camt053') return { format, ...linesFromCamt053(text) };
+    if (format !== 'csv') throw badRequest('VALIDATION_FAILED', [{ path: '/format', message: 'csv or camt053' }]);
+    const reference = field('referenceColumn');
+    const amount = field('amountColumn');
+    if (!reference || !amount) throw badRequest('VALIDATION_FAILED', [{ path: '/referenceColumn', message: 'referenceColumn and amountColumn are required for CSV' }]);
+    const currency = field('defaultCurrency');
+    if (!field('currencyColumn') && !(currency && /^[A-Z]{3}$/.test(currency))) throw badRequest('VALIDATION_FAILED', [{ path: '/currencyColumn', message: 'give currencyColumn or defaultCurrency' }]);
+    return { format, ...linesFromCsv(text, {
+      reference, amount, currency: field('currencyColumn'), kind: field('kindColumn'), status: field('statusColumn'),
+      defaultCurrency: currency, decimalComma: field('decimalComma') === 'true',
+    }) };
   });
 
   app.get('/admin/reconciliation/runs', {

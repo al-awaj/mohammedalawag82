@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, Text } from 'react-native';
+import { Linking, Pressable, Text } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { localized } from '@events/shared';
 import { useGet, useSession } from '../lib/session';
@@ -16,6 +16,8 @@ export default function HelpScreen() {
   const code = country ?? countries.data?.[0]?.code ?? null;
   const q = useGet<Article[]>(code ? '/v1/help' : null, { country: code ?? '', audience: 'customer' });
   const [open, setOpen] = useState<string | null>(null);
+  const brand = useGet<{ contact: { phone?: string; whatsapp?: string; email?: string; hours?: Record<string, string> } }>('/v1/branding', code ? { country: code } : undefined).data;
+  const ct = brand?.contact ?? {};
   return (
     <Screen>
       <Stack.Screen options={{ title: tr({ ar: 'المساعدة والأسئلة الشائعة', en: 'Help & FAQ' }) }} />
@@ -29,6 +31,10 @@ export default function HelpScreen() {
         </Card>
       ))}
       <Button variant="secondary" title={tr({ ar: 'تواصل مع الدعم', en: 'Contact support' })} onPress={() => router.push('/disputes?new=1')} />
+      {ct.phone ? <Button variant="secondary" testID="contact-phone" title={`📞 ${ct.phone}`} onPress={() => void Linking.openURL(`tel:${ct.phone}`)} /> : null}
+      {ct.whatsapp ? <Button variant="secondary" title={`💬 WhatsApp ${ct.whatsapp}`} onPress={() => void Linking.openURL(`https://wa.me/${ct.whatsapp!.replace(/\D/g, '')}`)} /> : null}
+      {ct.email ? <Button variant="secondary" title={`✉️ ${ct.email}`} onPress={() => void Linking.openURL(`mailto:${ct.email}`)} /> : null}
+      {ct.hours?.[lang] ? <P muted small>{ct.hours[lang]}</P> : null}
     </Screen>
   );
 }

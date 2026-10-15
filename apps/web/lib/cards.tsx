@@ -11,7 +11,15 @@ const UNIT: Record<string, { ar: string; en: string }> = {
   fixed: { ar: '', en: '' }, per_hour: { ar: '/ساعة', en: '/hour' }, per_day: { ar: '/يوم', en: '/day' }, per_person: { ar: '/شخص', en: '/person' }, per_unit: { ar: '/وحدة', en: '/unit' },
 };
 
-export function ServiceCards({ items, lang }: { items: ServiceCard[]; lang: Lang }) {
+/** "≈ 1,234 USD" when a display currency is chosen and a rate exists; never used for charging. */
+export function approx(amount: string, currency: string, display: { code: string; rates: Record<string, string> } | null | undefined): string | null {
+  if (!display || currency === display.code) return null;
+  const rate = display.rates[currency.trim()];
+  if (!rate) return null;
+  return `≈ ${formatMoney((Number(amount) * Number(rate)).toFixed(2), display.code)}`;
+}
+
+export function ServiceCards({ items, lang, display }: { items: ServiceCard[]; lang: Lang; display?: { code: string; rates: Record<string, string> } | null }) {
   const ar = lang === 'ar';
   return (
     <div className="cards">
@@ -33,6 +41,7 @@ export function ServiceCards({ items, lang }: { items: ServiceCard[]; lang: Lang
                   <span className="muted small">{ar ? 'يبدأ من ' : 'From '}</span>
                   <span className="price num" dir="ltr">{formatMoney(s.fromPrice, s.currency)}</span>
                   <span className="muted small">{UNIT[s.pricingUnit]?.[lang]}</span>
+                  {approx(s.fromPrice, s.currency, display) && <span className="approx small muted" dir="ltr">{approx(s.fromPrice, s.currency, display)}</span>}
                 </span>
                 {s.requiresProviderApproval
                   ? <span className="pill pill-warn">{ar ? 'بتأكيد صاحب الخدمة' : 'Provider confirms'}</span>

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { formatDate, type Lang } from '@events/shared';
 import { ServiceCards, type ServiceCard } from '@/lib/cards';
-import { publicGet, visitor } from '@/lib/server';
+import { publicGet, visitor, displayRates } from '@/lib/server';
 
 interface PublicProvider {
   id: string; businessName: string; activityType: string; city: string; description: string | null; countryCode: string;
@@ -40,7 +40,7 @@ export default async function ProviderPage({ params }: { params: Promise<{ id: s
         {p.description && <p style={{ whiteSpace: 'pre-wrap' }}>{p.description}</p>}
       </div>
       <h2>{ar ? `الخدمات (${p.serviceCount})` : `Services (${p.serviceCount})`}</h2>
-      {services?.items.length ? <ServiceCards items={services.items} lang={lang} /> : <div className="empty">{ar ? 'لا توجد خدمات منشورة حاليًا.' : 'No published services right now.'}</div>}
+      {services?.items.length ? <ServiceCards items={services.items} lang={lang} display={await displayRates(services.items.map((x) => x.currency), lang)} /> : <div className="empty">{ar ? 'لا توجد خدمات منشورة حاليًا.' : 'No published services right now.'}</div>}
     </div>
   );
 }

@@ -8,7 +8,11 @@ import { useApp, useGet, useSession, useTr } from '@events/web-kit/client';
 import { LangSwitch } from '@events/web-kit/ui';
 import { BRAND } from './brand';
 
-export function Header({ countries, current }: { countries: { code: string; name: Record<string, string> }[]; current: string | null }) {
+export type Branding = { name: { ar: string; en: string }; primaryColor: string; logoUrl: string | null };
+
+export function Header({ countries, current, brand, currencies, display }: {
+  countries: { code: string; name: Record<string, string> }[]; current: string | null; brand: Branding | null; currencies: string[]; display: string | null;
+}) {
   const tr = useTr();
   const { lang } = useApp();
   const router = useRouter();
@@ -40,18 +44,31 @@ export function Header({ countries, current }: { countries: { code: string; name
       {countries.map((c) => <option key={c.code} value={c.code}>{localized(c.name, lang as Lang)}</option>)}
     </select>
   );
+  // Prices are always charged in the service's currency; this only adds an approximate conversion for reading (clause 11).
+  const currencySelect = currencies.length > 1 && (
+    <select aria-label={tr({ ar: 'عملة العرض', en: 'Display currency' })} className="country-select" value={display ?? ''} data-testid="display-currency" onChange={(e) => {
+      document.cookie = e.target.value ? `dcur=${e.target.value}; Path=/; Max-Age=31536000; SameSite=Lax` : 'dcur=; Path=/; Max-Age=0';
+      router.refresh();
+    }}>
+      <option value="">{tr({ ar: 'عملة الخدمة', en: 'Service currency' })}</option>
+      {currencies.map((c) => <option key={c} value={c}>≈ {c}</option>)}
+    </select>
+  );
+  const name = brand ? tr(brand.name) : tr(BRAND);
   return (
     <header className={`site-header${scrolled ? ' scrolled' : ''}`}>
       <div className="site-header-inner">
         <button type="button" className="icon-btn only-mobile" aria-label="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? <X className="ico" aria-hidden /> : <Menu className="ico" aria-hidden />}
         </button>
-        <Link href="/" className="logo"><span className="brand-mark"><Sparkles className="ico" aria-hidden /></span>{tr(BRAND)}</Link>
+        <Link href="/" className="logo">{brand?.logoUrl
+          ? <img src={`/bff${brand.logoUrl}`} alt="" className="brand-logo" />
+          : <span className="brand-mark"><Sparkles className="ico" aria-hidden /></span>}{name}</Link>
         <nav className="site-nav only-desktop">
           {links.map((l) => <Link key={l.href} href={l.href} className={active(l.href) ? 'active' : ''}>{l.label}</Link>)}
         </nav>
         <div className="grow" />
-        <div className="only-desktop row gap">{countrySelect}<LangSwitch /></div>
+        <div className="only-desktop row gap">{countrySelect}{currencySelect}<LangSwitch /></div>
         {customer ? <>
           <Link href="/account/notifications" className="icon-btn" aria-label={tr({ ar: 'الإشعارات', en: 'Notifications' })}>
             <Bell className="ico" aria-hidden />{unread > 0 && <span className="dot-count">{unread > 99 ? '99+' : unread}</span>}
@@ -66,7 +83,7 @@ export function Header({ countries, current }: { countries: { code: string; name
         <div className="mobile-menu">
           {links.map((l) => <Link key={l.href} href={l.href} className={active(l.href) ? 'active' : ''}><l.icon className="ico" aria-hidden />{l.label}</Link>)}
           {customer && <Link href="/account/bookings"><User className="ico" aria-hidden />{tr({ ar: 'حسابي وحجوزاتي', en: 'My account & bookings' })}</Link>}
-          <div className="row gap">{countrySelect}<LangSwitch /></div>
+          <div className="row gap wrap">{countrySelect}{currencySelect}<LangSwitch /></div>
         </div>
       )}
     </header>

@@ -16,7 +16,7 @@ test('admin imports the starter catalog and a provider uploads a required docume
   await page.getByRole('button', { name: /استيراد الكتالوج الجاهز/ }).click();
   const d = page.locator('dialog[open]');
   await expect(d.getByText('قاعة أفراح')).toBeVisible();
-  await d.locator('#f-countryIds input[type="checkbox"]').first().check();
+  await d.locator('#f-countryIds label', { hasText: `(${c.code})` }).locator('input').check();
   await d.locator('button[type="submit"]').click();
   await expect(d).toHaveCount(0);
   await expect(page.getByRole('cell', { name: 'القاعات والمواقع' })).toBeVisible();

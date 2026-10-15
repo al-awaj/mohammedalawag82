@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { toQueryString } from '@events/shared';
 import { ServiceCards, type ServiceCard } from '@/lib/cards';
-import { currentCountry, publicGet, visitor } from '@/lib/server';
+import { currentCountry, publicGet, visitor, displayRates } from '@/lib/server';
 import { NearMe } from '@/lib/near-me';
 
 export const metadata: Metadata = { title: 'البحث عن خدمات' };
@@ -48,7 +48,7 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
       </form>
       {!res ? <div className="alert alert-error">{ar ? 'تعذر تحميل النتائج.' : 'Could not load results.'}</div> : <>
         <p className="muted">{ar ? `${res.total} نتيجة` : `${res.total} results`}</p>
-        {res.items.length ? <ServiceCards items={res.items} lang={lang} /> : <div className="empty">{ar ? 'لا توجد نتائج مطابقة.' : 'No matching services.'}</div>}
+        {res.items.length ? <ServiceCards items={res.items} lang={lang} display={await displayRates(res.items.map((x) => x.currency), lang)} /> : <div className="empty">{ar ? 'لا توجد نتائج مطابقة.' : 'No matching services.'}</div>}
         <div className="pager">
           {offset > 0 && <Link className="btn btn-ghost" href={`/search${toQueryString({ ...q, offset: Math.max(0, offset - LIMIT) })}`}>{ar ? 'السابق' : 'Previous'}</Link>}
           {offset + LIMIT < res.total && <Link className="btn btn-ghost" href={`/search${toQueryString({ ...q, offset: offset + LIMIT })}`}>{ar ? 'التالي' : 'Next'}</Link>}

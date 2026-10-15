@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { formatDate, formatMoney, localized, type Lang } from '@events/shared';
 import { BookingWidget, type PublicService } from '@/lib/booking-widget';
-import { publicGet, visitor } from '@/lib/server';
+import { displayRates, publicGet, visitor } from '@/lib/server';
+import { approx } from '@/lib/cards';
 
 type Reviews = { count: number; average: string | null; items: { id: string; rating: number; comment: string | null; reviewer: string; createdAt: string }[] };
 
@@ -27,6 +28,7 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
   const ar = lang === 'ar';
   const images = s.media.filter((m) => m.kind === 'image' && !m.packageId);
   const policy = s.cancellationPolicy;
+  const display = await displayRates([s.currency, ...s.packages.map((p) => p.currency)], lang);
   return (
     <div className="layout-2">
       <div>
@@ -61,7 +63,7 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
             <h2>{ar ? 'الباقات' : 'Packages'}</h2>
             {s.packages.map((p) => (
               <div key={p.id} style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 10 }}>
-                <div className="row between"><strong>{localized(p.name, lang)}</strong><span className="price num" dir="ltr">{formatMoney(p.price, p.currency)}</span></div>
+                <div className="row between"><strong>{localized(p.name, lang)}</strong><span className="price num" dir="ltr">{formatMoney(p.price, p.currency)}{approx(p.price, p.currency, display) && <span className="approx small muted"> {approx(p.price, p.currency, display)}</span>}</span></div>
                 {p.description && <p className="muted small">{localized(p.description, lang)}</p>}
                 {s.media.some((m) => m.packageId === p.id) && <div className="gallery">{s.media.filter((m) => m.packageId === p.id && m.kind === 'image').map((m) => <img key={m.id} src={`/bff${m.url}`} alt={m.caption ? localized(m.caption, lang) : localized(p.name, lang)} loading="lazy" />)}</div>}
                 {p.durationMinutes && <p className="small muted">{ar ? `المدة: ${p.durationMinutes} دقيقة` : `Duration: ${p.durationMinutes} minutes`}</p>}
