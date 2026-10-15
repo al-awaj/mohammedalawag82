@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { formatDateTime, formatMoney, localized } from '@events/shared';
 import { api } from '../../lib/api';
@@ -24,7 +24,9 @@ function BookingView() {
   const cancellable = !!b.data && ['awaiting_payment', 'confirmed'].includes(b.data.status);
   const preview = useGet<Preview>(cancellable ? `/v1/bookings/${id}/cancellation-preview` : null);
   const refunds = useGet<{ id: string; number: string; amount: string; currency: string; status: string }[]>(`/v1/bookings/${id}/refunds`);
-  const [panel, setPanel] = useState<'none' | 'cancel' | 'review' | 'dispute'>('none');
+  const [panel, setPanel] = useState<'none' | 'cancel' | 'review' | 'dispute' | 'reschedule'>('none');
+  const [newDay, setNewDay] = useState('');
+  const reschedules = useGet<{ id: string; newStartAt: string; status: string; deadline: string; decisionReason: string | null }[]>(`/v1/bookings/${id}/reschedule-requests`);
   const [text, setText] = useState('');
   const [rating, setRating] = useState(5);
   const [subject, setSubject] = useState('');
@@ -46,14 +48,38 @@ function BookingView() {
         <Text>{tr({ ar: 'المتبقي', en: 'Remaining' })}: <Money amount={d.remainingAmount} currency={d.currency} /></Text>
       </Card>
       <EventPicker value={d.eventId} path={`/v1/bookings/${d.id}/event`} />
+      {!!reschedules.data?.length && (
+        <Card testID="reschedule-requests">
+          <H2>{tr({ ar: 'طلبات تغيير الموعد', en: 'Date change requests' })}</H2>
+          {reschedules.data.map((r) => (
+            <View key={r.id} style={{ gap: 2 }}>
+              <P>{formatDateTime(r.newStartAt, lang)}</P>
+              <Badge group="reschedule" value={r.status} />
+              {r.status === 'pending' ? <P small muted>{tr({ ar: 'بانتظار رد صاحب الخدمة حتى', en: 'Awaiting the provider until' })} {formatDateTime(r.deadline, lang)}</P>
+                : r.decisionReason ? <P small muted>{r.decisionReason}</P> : null}
+              {r.status === 'pending' && <Button variant="secondary" title={tr({ ar: 'سحب الطلب', en: 'Withdraw' })} onPress={() => act.mutate(() => api.post(`/v1/reschedule-requests/${r.id}/withdraw`))} />}
+            </View>
+          ))}
+        </Card>
+      )}
       {d.cancellationPolicy && <Card><H2>{tr({ ar: 'سياسة الإلغاء', en: 'Cancellation policy' })}</H2><P>{localized(d.cancellationPolicy.description, lang)}</P></Card>}
       <ErrorText error={act.error} />
       <Row>
         {['awaiting_payment', 'confirmed', 'in_progress'].includes(d.status) && <Button title={tr({ ar: 'الدفع', en: 'Payment' })} onPress={() => router.push(`/order/${d.orderId}`)} />}
+        {cancellable && new Date(d.startAt).getTime() > Date.now() && !reschedules.data?.some((r) => r.status === 'pending') && <Button testID="reschedule-booking" variant="secondary" title={tr({ ar: 'تغيير الموعد', en: 'Change date' })} onPress={() => setPanel('reschedule')} />}
         {cancellable && <Button testID="cancel-booking" variant="danger" title={tr({ ar: 'إلغاء الحجز', en: 'Cancel booking' })} onPress={() => setPanel('cancel')} />}
         {d.status === 'completed' && <Button variant="secondary" title={tr({ ar: 'قيّم الخدمة', en: 'Review' })} onPress={() => setPanel('review')} />}
         {!['pending_provider_approval', 'awaiting_payment', 'expired', 'rejected'].includes(d.status) && <Button variant="secondary" title={tr({ ar: 'فتح نزاع', en: 'Open a dispute' })} onPress={() => setPanel('dispute')} />}
       </Row>
+      {panel === 'reschedule' && (
+        <Card testID="reschedule-panel">
+          <Notice>{tr({ ar: 'تبقى المدة والسعر كما هما. يُحجز الموعد الجديد مؤقتًا حتى يرد صاحب الخدمة، ويبقى موعدك الحالي إن رُفض الطلب.', en: 'Duration and price stay the same. The new date is held until the provider answers; your current date stands if declined.' })}</Notice>
+          <Field testID="reschedule-day" label={tr({ ar: 'اليوم الجديد (YYYY-MM-DD)', en: 'New day (YYYY-MM-DD)' })} value={newDay} onChangeText={setNewDay} placeholder="2027-05-20" autoCapitalize="none" />
+          <Button testID="confirm-reschedule" disabled={!/^\d{4}-\d{2}-\d{2}$/.test(newDay)} title={tr({ ar: 'إرسال الطلب', en: 'Send request' })}
+            // Same time of day on the new day, in the booking country's timezone (computed by the server).
+            onPress={() => act.mutate(() => api.post(`/v1/bookings/${id}/reschedule`, { date: newDay }), { onSuccess: () => { done(); setNewDay(''); } })} />
+        </Card>
+      )}
       {panel === 'cancel' && preview.data && (
         <Card testID="cancel-panel">
           <Notice kind="warn">{preview.data.mode === 'immediate'

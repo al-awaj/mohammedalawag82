@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { use } from 'react';
 import { useCan, useGet, useTr } from '@events/web-kit/client';
-import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, ErrorBox, Json, Loading, Money, Page, reasonField, Text } from '@events/web-kit/ui';
+import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, ErrorBox, Json, Loading, Money, Page, reasonField, Text, RescheduleCard } from '@events/web-kit/ui';
 
 interface Booking {
   id: string; number: string; orderId: string; orderNumber: string; status: string; serviceId: string; serviceTitle: Record<string, string>; packageName: Record<string, string> | null;
@@ -81,6 +81,7 @@ export default function BookingPage({ params }: { params: Promise<{ id: string }
       </Card>}
       {refundable.data && <Card title={tr({ ar: 'القابل للاسترداد', en: 'Refundable' })}><Json value={refundable.data} /></Card>}
       <Card title={tr({ ar: 'سياسة الإلغاء المحفوظة', en: 'Cancellation policy (snapshot)' })}>{b.cancellationPolicy ? <Json value={b.cancellationPolicy} /> : '—'}</Card>
+      <RescheduleCard audience="staff" bookingId={b.id} startAt={b.startAt} endAt={b.endAt} movable={false} />
       <Card title={tr({ ar: 'السجل', en: 'History' })}>
         <DataTable rows={b.history.map((h, i) => ({ ...h, id: String(i) }))} columns={[
           { key: 'at', label: { ar: 'الوقت', en: 'Time' }, render: (h) => <DateTime value={h.at} /> },

@@ -1,6 +1,7 @@
 import { loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { releaseExpiredHolds } from './modules/availability/engine.js';
+import { expireRescheduleRequests } from './modules/booking/reschedule.js';
 import { expireBookings, warnExpiringHolds } from './modules/booking/service.js';
 import { deliverOutbox } from './modules/notifications/delivery.js';
 import { sendReminders } from './modules/notifications/reminders.js';
@@ -16,6 +17,7 @@ const jobs: { name: string; everyMs: number; run: () => Promise<number> }[] = [
   // Bookings first, so an expiring booking frees its own hold with a booking-specific reason and notice.
   { name: 'expire-bookings', everyMs: 30_000, run: () => expireBookings(db) },
   { name: 'release-expired-holds', everyMs: 30_000, run: () => releaseExpiredHolds(db) },
+  { name: 'expire-reschedule-requests', everyMs: 60_000, run: () => expireRescheduleRequests(db) },
   { name: 'warn-expiring-holds', everyMs: 60_000, run: () => warnExpiringHolds(db) },
   { name: 'send-reminders', everyMs: 15 * 60_000, run: () => sendReminders(db) },
   { name: 'deliver-notifications', everyMs: 5_000, run: () => deliverOutbox(db) },

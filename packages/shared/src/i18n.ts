@@ -100,6 +100,10 @@ export const ENUMS: Record<string, Dict> = {
   event: {
     planning: { ar: 'قيد التخطيط', en: 'Planning' }, confirmed: { ar: 'مؤكدة', en: 'Confirmed' }, completed: { ar: 'منتهية', en: 'Completed' }, cancelled: { ar: 'ملغاة', en: 'Cancelled' },
   },
+  reschedule: {
+    pending: { ar: 'بانتظار الرد', en: 'Awaiting answer' }, approved: { ar: 'تمت الموافقة', en: 'Approved' }, rejected: { ar: 'مرفوض', en: 'Declined' },
+    withdrawn: { ar: 'مسحوب', en: 'Withdrawn' }, expired: { ar: 'انتهت المهلة', en: 'Expired' },
+  },
 };
 
 export const EVENT_TYPES = Object.keys(ENUMS.eventType!);

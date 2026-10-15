@@ -19,11 +19,23 @@ export default function Dashboard() {
     { key: 'total', label: { ar: 'الإجمالي', en: 'Total' }, render: (b: Booking) => <Money amount={b.total} currency={b.currency} /> },
     { key: 'status', label: { ar: 'الحالة', en: 'Status' }, render: (b: Booking) => <Badge group="booking" value={b.status} /> },
   ];
+  const reschedules = useGet<{ id: string; bookingId: string; bookingNumber: string; serviceTitle: Record<string, string>; oldStartAt: string; newStartAt: string; deadline: string }[]>('/v1/provider/reschedule-requests').data ?? [];
   return (
     <Page title={tr({ ar: 'لوحة المتابعة', en: 'Dashboard' })}>
       {pending.length > 0 && (
         <Card title={tr({ ar: 'حجوزات بانتظار موافقتك', en: 'Bookings awaiting your approval' })}>
           <DataTable rows={pending} rowHref={(b) => `/bookings/${b.id}`} columns={[...cols, { key: 'approvalDeadline', label: { ar: 'آخر موعد للرد', en: 'Respond by' }, render: (b: Booking) => <DateTime value={b.approvalDeadline} /> }]} />
+        </Card>
+      )}
+      {reschedules.length > 0 && (
+        <Card title={tr({ ar: 'طلبات تغيير موعد بانتظار ردك', en: 'Date change requests awaiting you' })}>
+          <DataTable rows={reschedules} rowHref={(r) => `/bookings/${r.bookingId}`} columns={[
+            { key: 'bookingNumber', label: { ar: 'الحجز', en: 'Booking' } },
+            { key: 'serviceTitle', label: { ar: 'الخدمة', en: 'Service' }, render: (r) => <Text value={r.serviceTitle} /> },
+            { key: 'oldStartAt', label: { ar: 'الموعد الحالي', en: 'Current date' }, render: (r) => <DateTime value={r.oldStartAt} /> },
+            { key: 'newStartAt', label: { ar: 'الموعد المطلوب', en: 'Requested date' }, render: (r) => <DateTime value={r.newStartAt} /> },
+            { key: 'deadline', label: { ar: 'آخر موعد للرد', en: 'Respond by' }, render: (r) => <DateTime value={r.deadline} /> },
+          ]} />
         </Card>
       )}
       <Card title={tr({ ar: 'الحجوزات القادمة', en: 'Upcoming bookings' })} actions={<Link href="/bookings">{tr({ ar: 'الكل', en: 'All' })}</Link>}>

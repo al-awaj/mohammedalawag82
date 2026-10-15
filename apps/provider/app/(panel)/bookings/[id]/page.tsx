@@ -1,7 +1,7 @@
 'use client';
 import { use } from 'react';
 import { useGet, useTr } from '@events/web-kit/client';
-import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, disputeFields, ErrorBox, Loading, Money, Notice, Page, reasonField, Text } from '@events/web-kit/ui';
+import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, disputeFields, ErrorBox, Loading, Money, Notice, Page, reasonField, Text, RescheduleCard } from '@events/web-kit/ui';
 
 interface Booking {
   id: string; number: string; status: string; serviceTitle: Record<string, string>; packageName: Record<string, string> | null; startAt: string; endAt: string; units: number; guests: number | null;
@@ -60,6 +60,7 @@ export default function BookingPage({ params }: { params: Promise<{ id: string }
           { key: 'price', label: { ar: 'السعر', en: 'Price' }, render: (a) => <Money amount={a.price} currency={b.currency} /> },
         ]} />
       </Card>}
+      <RescheduleCard audience="provider" bookingId={b.id} startAt={b.startAt} endAt={b.endAt} movable={false} />
       <Card title={tr({ ar: 'السجل', en: 'History' })}>
         <DataTable rows={b.history.map((h, i) => ({ ...h, id: String(i) }))} columns={[
           { key: 'at', label: { ar: 'الوقت', en: 'Time' }, render: (h) => <DateTime value={h.at} /> },
