@@ -57,6 +57,12 @@ export const SETTINGS = {
     scopes: ['global', 'country'],
     description: { ar: 'تفعيل الدفع المباشر لصاحب الخدمة', en: 'Enable direct payment to the provider' },
   }),
+  'payments.partial_min_percent': def({
+    schema: z.number().min(1).max(100),
+    default: 100,
+    scopes: ['global', 'country'],
+    description: { ar: 'أقل نسبة من المتبقي يمكن للعميل دفعها مبكرًا كدفعة جزئية (100 = لا دفعات جزئية خارج خطة الأقساط)', en: 'Smallest share of the remaining balance a customer may pay early as a partial payment (100 = no partial payments outside an instalment plan)' },
+  }),
   'refunds.provider_cancellation_percent': def({
     schema: z.number().min(0).max(100),
     default: 100,

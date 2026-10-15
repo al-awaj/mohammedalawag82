@@ -19,7 +19,7 @@ export interface PublicService {
   rating: { average: string | null; count: number };
 }
 type Day = { date: string; open: boolean; available: boolean; slots?: { start: string; end: string; available: boolean }[] };
-type Quote = { subtotal: string; total: string; upfrontAmount: string; balanceDueAt: string | null; currency: string; addOns: { code: string; price: string }[]; securityDepositAmount?: string };
+type Quote = { subtotal: string; total: string; upfrontAmount: string; balanceDueAt: string | null; instalments?: { seq: number; amount: string; dueAt: string }[] | null; currency: string; addOns: { code: string; price: string }[]; securityDepositAmount?: string };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const addDays = (d: string, n: number) => iso(new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000));
@@ -132,7 +132,10 @@ export function BookingWidget({ service: s }: { service: PublicService }) {
           <dl className="detail" style={{ gridTemplateColumns: '1fr' }}>
             <div className="detail-row"><dt>{tr({ ar: 'الإجمالي', en: 'Total' })}</dt><dd className="price num" dir="ltr">{formatMoney(quote.total, quote.currency)}</dd></div>
             <div className="detail-row"><dt>{tr({ ar: 'المطلوب عند الحجز', en: 'Due when booking' })}</dt><dd className="num" dir="ltr">{formatMoney(quote.upfrontAmount, quote.currency)}</dd></div>
-            {quote.balanceDueAt && quote.upfrontAmount !== quote.total && <div className="detail-row"><dt>{tr({ ar: 'المتبقي يُستحق في', en: 'Balance due on' })}</dt><dd>{formatDate(quote.balanceDueAt, lang)}</dd></div>}
+            {quote.instalments?.map((i) => (
+              <div key={i.seq} className="detail-row"><dt>{tr({ ar: 'القسط', en: 'Instalment' })} {i.seq} · {formatDate(i.dueAt, lang)}</dt><dd className="num" dir="ltr">{formatMoney(i.amount, quote.currency)}</dd></div>
+            ))}
+            {!quote.instalments?.length && quote.balanceDueAt && quote.upfrontAmount !== quote.total && <div className="detail-row"><dt>{tr({ ar: 'المتبقي يُستحق في', en: 'Balance due on' })}</dt><dd>{formatDate(quote.balanceDueAt, lang)}</dd></div>}
           </dl>
           <Notice>{tr({ ar: 'لا رسوم إضافية. يُحجز الموعد مؤقتًا عند إتمام الطلب حتى تدفع.', en: 'No extra fees. The slot is held temporarily when you place the order, until you pay.' })}</Notice>
           <Button variant="primary" disabled={busy} onClick={add}>{tr({ ar: 'أضف إلى السلة', en: 'Add to cart' })}</Button>

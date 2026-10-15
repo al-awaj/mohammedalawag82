@@ -124,6 +124,7 @@ function Reminders() {
     { value: 'before_balance_due', label: { ar: 'قبل استحقاق المتبقي', en: 'Before balance due' } },
     { value: 'balance_overdue', label: { ar: 'عند تأخر المتبقي', en: 'Balance overdue' } },
     { value: 'before_event', label: { ar: 'قبل الموعد', en: 'Before the event' } },
+    { value: 'before_instalment_due', label: { ar: 'قبل استحقاق قسط (القالب المقترح booking.instalment_reminder)', en: 'Before an instalment is due (suggested template booking.instalment_reminder)' } },
   ];
   if (isLoading) return <Loading />;
   return (

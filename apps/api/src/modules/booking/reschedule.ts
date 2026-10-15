@@ -107,7 +107,10 @@ export async function decideReschedule(db: Db, requestId: string, decision: 'app
     const shift = r.new_start_at.getTime() - b.start_at.getTime();
     await c.query(
       `UPDATE bookings SET start_at = $2, end_at = $3, calendar_block_id = $4,
-         balance_due_at = CASE WHEN balance_due_at IS NULL THEN NULL ELSE balance_due_at + make_interval(secs => $5::double precision / 1000) END
+         balance_due_at = CASE WHEN balance_due_at IS NULL THEN NULL ELSE balance_due_at + make_interval(secs => $5::double precision / 1000) END,
+         instalment_plan = CASE WHEN instalment_plan IS NULL THEN NULL ELSE (
+           SELECT jsonb_agg(x || jsonb_build_object('dueAt', to_jsonb((x->>'dueAt')::timestamptz + make_interval(secs => $5::double precision / 1000))) ORDER BY (x->>'seq')::int)
+             FROM jsonb_array_elements(instalment_plan) x) END
        WHERE id = $1`, [b.id, r.new_start_at, r.new_end_at, blockId, shift]);
     await c.query(`UPDATE booking_reschedule_requests SET status = 'approved', decided_by = $2, decided_at = now(), decision_reason = $3 WHERE id = $1`, [r.id, deciderId, reason]);
     await audit(c, actor, { action: 'booking.rescheduled', entityType: 'booking', entityId: b.id, reason,

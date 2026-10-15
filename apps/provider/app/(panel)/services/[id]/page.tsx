@@ -4,7 +4,7 @@ import { localized } from '@events/shared';
 import { useAction, useApp, useGet, useTr } from '@events/web-kit/client';
 import { ActionButton, Badge, Card, DataTable, ErrorBox, Form, Loading, Money, Notice, Page, Tabs, Text, type FieldSpec } from '@events/web-kit/ui';
 import { attributeFields, splitAttributes } from '@/lib/fields';
-import { serviceFields, type Package, type RentalItem, type Service, type ServiceType } from '@/lib/service-form';
+import { planField, serviceFields, withPlan, type Package, type RentalItem, type Service, type ServiceType } from '@/lib/service-form';
 import { useCurrencyOptions, usePolicyOptions } from '@/lib/options';
 
 type Tab = 'details' | 'media' | 'packages' | 'rental' | 'availability';
@@ -59,7 +59,7 @@ function Details({ s, type }: { s: Service; type: ServiceType }) {
   const tr = useTr();
   const currencies = useCurrencyOptions();
   const policies = usePolicyOptions();
-  const save = useAction((api, v: Record<string, unknown>) => api.patch(`/v1/provider/services/${s.id}`, v));
+  const save = useAction((api, v: Record<string, unknown>) => api.patch(`/v1/provider/services/${s.id}`, withPlan(v)));
   return (
     <Card>
       <ErrorBox error={save.error} />
@@ -135,6 +135,7 @@ function packageFields(units: string[], p?: Package): FieldSpec[] {
     { name: 'depositType', label: { ar: 'العربون', en: 'Deposit' }, type: 'select', options: DEPOSIT_TYPES, defaultValue: p?.depositType ?? 'none' },
     { name: 'depositValue', label: { ar: 'قيمة العربون (مبلغ أو نسبة)', en: 'Deposit value (amount or percent)' }, type: 'decimal', defaultValue: p?.depositValue ?? '0' },
     { name: 'balanceDueDaysBefore', label: { ar: 'استحقاق المتبقي قبل الموعد بـ (أيام)', en: 'Balance due (days before)' }, type: 'number', defaultValue: p?.balanceDueDaysBefore ?? 0 },
+    planField(p?.instalmentPlan),
     { name: 'validFrom', label: { ar: 'متاحة من تاريخ', en: 'Valid from' }, type: 'date', defaultValue: p?.validFrom?.slice(0, 10) ?? undefined },
     { name: 'validTo', label: { ar: 'متاحة حتى تاريخ', en: 'Valid to' }, type: 'date', defaultValue: p?.validTo?.slice(0, 10) ?? undefined },
     { name: 'sortOrder', label: { ar: 'ترتيب العرض', en: 'Display order' }, type: 'number', defaultValue: p?.sortOrder ?? 0 },
@@ -154,7 +155,7 @@ function packageBody(v: Record<string, unknown>) {
     return { code, name: { ...(nameAr ? { ar: nameAr } : {}), ...(nameEn ? { en: nameEn } : {}) }, price };
   });
   return {
-    ...rest, inclusions, addOns: parsed,
+    ...withPlan(rest), inclusions, addOns: parsed,
     durationMinutes: rest.durationMinutes ?? null, terms: rest.terms ?? null, description: rest.description ?? null,
     validFrom: rest.validFrom ?? null, validTo: rest.validTo ?? null,
     availableWeekdays: ((availableWeekdays as string[] | undefined) ?? []).map(Number),

@@ -4,11 +4,11 @@ import { use } from 'react';
 import { formatMoney, localized } from '@events/shared';
 import { useApp, useGet, useTr } from '@events/web-kit/client';
 import { EventPicker } from '@/lib/events';
-import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, disputeFields, ErrorBox, Loading, Money, Notice, Page, RescheduleCard } from '@events/web-kit/ui';
+import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, disputeFields, ErrorBox, Loading, Money, Notice, Page, RescheduleCard, InstalmentSchedule, type Instalment } from '@events/web-kit/ui';
 
 interface Booking {
   id: string; number: string; orderId: string; status: string; serviceId: string; serviceTitle: Record<string, string>; packageName: Record<string, string> | null; startAt: string; endAt: string;
-  guests: number | null; addOns: { code: string; name: Record<string, string>; price: string }[]; subtotal: string; discountAmount: string; total: string; currency: string; upfrontAmount: string;
+  guests: number | null; addOns: { code: string; name: Record<string, string>; price: string }[]; subtotal: string; discountAmount: string; total: string; currency: string; upfrontAmount: string; instalmentPlan: Instalment[] | null;
   balanceDueAt: string | null; paidAmount: string; remainingAmount: string; providerName: string | null; holdExpiresAt: string | null; decisionReason: string | null;
   cancellationPolicy: { description: Record<string, string>; tiers: { hoursBefore: number; refundPercentOfPaid: number }[]; depositRefundable: boolean } | null;
   history: { to: string; reason: string | null; at: string }[]; eventId: string | null;
@@ -62,6 +62,7 @@ export default function BookingPage({ params }: { params: Promise<{ id: string }
           [tr({ ar: 'موعد سداد المتبقي', en: 'Balance due' }), <DateTime key="bd" value={b.balanceDueAt} dateOnly />],
         ]} />
       </Card>
+      <InstalmentSchedule plan={b.instalmentPlan} upfrontAmount={b.upfrontAmount} paidAmount={b.paidAmount} currency={b.currency} />
       <RescheduleCard audience="customer" bookingId={id} startAt={b.startAt} endAt={b.endAt} movable={['awaiting_payment', 'confirmed'].includes(b.status) && new Date(b.startAt).getTime() > Date.now()} />
       <EventPicker value={b.eventId} path={`/v1/bookings/${id}/event`} testId="booking-event" />
       {b.cancellationPolicy && <Card title={tr({ ar: 'سياسة الإلغاء المتفق عليها', en: 'Agreed cancellation policy' })}>

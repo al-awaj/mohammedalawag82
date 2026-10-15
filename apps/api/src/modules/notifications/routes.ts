@@ -146,7 +146,7 @@ export async function notificationRoutes(app: App, deps: Deps) {
     ...staff,
     schema: {
       tags: ['admin:notifications'], security: sec,
-      body: z.object({ kind: z.enum(['before_balance_due', 'balance_overdue', 'before_event']), daysBefore: z.number().int().min(0).max(365).default(0),
+      body: z.object({ kind: z.enum(['before_balance_due', 'balance_overdue', 'before_event', 'before_instalment_due']), daysBefore: z.number().int().min(0).max(365).default(0),
         countryId: z.uuid().nullable().default(null), serviceTypeId: z.uuid().nullable().default(null), templateKey: z.string().regex(/^[a-z][a-z0-9_.]{2,100}$/),
         channel: z.enum(['auto', 'sms', 'email', 'whatsapp']).default('auto') }),
     },

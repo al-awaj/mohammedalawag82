@@ -5,7 +5,7 @@ import { localized } from '@events/shared';
 import { useAction, useApp, useGet, useTr } from '@events/web-kit/client';
 import { Card, Empty, ErrorBox, Form, Loading, Notice, Page } from '@events/web-kit/ui';
 import { attributeFields, splitAttributes } from '@/lib/fields';
-import { serviceFields, type ServiceType } from '@/lib/service-form';
+import { serviceFields, withPlan, type ServiceType } from '@/lib/service-form';
 import { useCurrencyOptions, usePolicyOptions } from '@/lib/options';
 
 export default function NewService() {
@@ -17,7 +17,7 @@ export default function NewService() {
   const policies = usePolicyOptions();
   const [typeId, setTypeId] = useState('');
   const type = types.data?.find((t) => t.id === typeId);
-  const create = useAction((api, v: Record<string, unknown>) => api.post<{ id: string }>('/v1/provider/services', v));
+  const create = useAction((api, v: Record<string, unknown>) => api.post<{ id: string }>('/v1/provider/services', withPlan(v)));
   if (types.isLoading) return <Loading />;
   return (
     <Page title={tr({ ar: 'خدمة جديدة', en: 'New service' })}>

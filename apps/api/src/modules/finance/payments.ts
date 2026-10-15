@@ -3,7 +3,7 @@ import type { Config } from '../../config.js';
 import { withTx, type Db, type Executor } from '../../db/pool.js';
 import { audit, systemActor, type ActorContext } from '../../lib/audit.js';
 import { AppError, badRequest, conflict, notFound } from '../../lib/errors.js';
-import { fromUnits, min, toUnits } from '../../lib/money.js';
+import { fromUnits, min, percentOf, roundToMinor, toUnits } from '../../lib/money.js';
 import { enqueueMessage } from '../../lib/outbox.js';
 import { confirmAfterPayment } from '../booking/service.js';
 import { getSetting } from '../settings/registry.js';
@@ -19,13 +19,13 @@ export type Purpose = 'upfront' | 'balance';
 
 interface PayableBooking {
   id: string; number: string; status: string; provider_id: string; service_type_id: string; total: string; upfront_amount: string;
-  currency_code: string; paid: string; pending: string;
+  currency_code: string; paid: string; pending: string; instalment_plan: { seq: number; amount: string; dueAt: string }[] | null;
 }
 
 /** Bookings of an order with what is paid (verified) and what is tied up in payments still in progress. */
 async function orderBookings(c: Executor, orderId: string, bookingIds?: string[]) {
   return (await c.query<PayableBooking>(
-    `SELECT b.id, b.number, b.status, b.provider_id, s.service_type_id, b.total, b.upfront_amount, b.currency_code,
+    `SELECT b.id, b.number, b.status, b.provider_id, s.service_type_id, b.total, b.upfront_amount, b.currency_code, b.instalment_plan,
             coalesce((SELECT sum(a.verified_amount) FROM payment_allocations a JOIN payments p ON p.id = a.payment_id
                        WHERE a.booking_id = b.id AND p.status = 'succeeded'), 0)::numeric(20,4)::text AS paid,
             coalesce((SELECT sum(a.amount) FROM payment_allocations a JOIN payments p ON p.id = a.payment_id
@@ -46,6 +46,32 @@ function dueFor(b: PayableBooking, purpose: Purpose): bigint {
   if (!['confirmed', 'in_progress'].includes(b.status)) return 0n;
   const d = toUnits(b.total) - paid;
   return d > 0n ? d : 0n;
+}
+
+/** What closes the next unpaid instalment of a booking (0 without a plan or once the plan is paid). */
+function nextInstalment(b: PayableBooking): bigint {
+  if (!b.instalment_plan?.length || !['confirmed', 'in_progress'].includes(b.status)) return 0n;
+  const paid = toUnits(b.paid);
+  let target = toUnits(b.upfront_amount);
+  for (const i of [...b.instalment_plan].sort((x, y) => x.seq - y.seq)) {
+    target += toUnits(i.amount);
+    if (target > paid) return target - paid;
+  }
+  return 0n;
+}
+
+/**
+ * Limits for paying part of the balance (clauses 46-47): the customer may pay the next instalment, or any amount
+ * of at least the admin's minimum share of what remains, up to the full remainder.
+ */
+async function balanceLimits(c: Executor, countryId: string, currency: string, bookings: PayableBooking[]) {
+  const due = bookings.reduce((s, b) => s + dueFor(b, 'balance'), 0n);
+  const next = bookings.reduce((s, b) => s + nextInstalment(b), 0n);
+  const pct = await getSetting(c, 'payments.partial_min_percent', countryId);
+  const minor = (await c.query<{ minor_units: number }>('SELECT minor_units FROM currencies WHERE code = $1', [currency])).rows[0]!.minor_units;
+  let minAmount = roundToMinor(percentOf(due, String(pct)), minor);
+  if (minAmount > due) minAmount = due;
+  return { due, next: next > 0n && next < due ? next : 0n, minAmount, minor };
 }
 
 interface RuleRow { id: string; service_type_id: string | null; model: Model; method: Method; integration_id: string | null; account_id: string | null; proof_required: boolean }
@@ -95,9 +121,12 @@ export async function paymentOptions(db: Db, orderId: string, customerId: string
       for (const g of groups) {
         const rule = await resolveRule(db, o.country_id, g, model, method);
         if (!rule) continue;
+        const limits = purpose === 'balance' ? await balanceLimits(db, o.country_id, o.currency_code.trim(), g) : null;
         options.push({
           purpose, model, method, proofRequired: rule.proof_required, currency: o.currency_code.trim(),
           bookingIds: g.map((b) => b.id), amount: fromUnits(g.reduce((s, b) => s + dueFor(b, purpose), 0n)),
+          minAmount: limits ? fromUnits(limits.minAmount) : null,
+          nextInstalmentAmount: limits && limits.next > 0n ? fromUnits(limits.next) : null,
         });
       }
     }
@@ -113,6 +142,8 @@ async function recordStatus(c: Executor, paymentId: string, from: string | null,
 export interface CreatePaymentInput {
   orderId: string; customerId: string; model: Model; method: Method; purpose: Purpose; bookingIds?: string[] | undefined;
   reportedAmount?: string | undefined; idempotencyKey: string;
+  /** Part of the balance to pay now (balance only); defaults to everything due. */
+  amount?: string | undefined;
 }
 
 /**
@@ -138,7 +169,20 @@ export async function createPayment(db: Db, config: Config, input: CreatePayment
 
     const rule = await resolveRule(c, o.country_id, due, input.model, input.method);
     if (!rule) throw badRequest('PAYMENT_METHOD_NOT_AVAILABLE');
-    const amount = due.reduce((s, b) => s + dueFor(b, input.purpose), 0n);
+    const fullDue = due.reduce((s, b) => s + dueFor(b, input.purpose), 0n);
+    let amount = fullDue;
+    // Allocation per booking, earliest booking first.
+    let shares = due.map((b) => ({ b, amount: dueFor(b, input.purpose) }));
+    if (input.amount !== undefined) {
+      if (input.purpose !== 'balance') throw badRequest('VALIDATION_FAILED', [{ path: '/amount', message: 'only the balance can be paid in parts' }]);
+      const want = toUnits(input.amount);
+      const lim = await balanceLimits(c, o.country_id, o.currency_code.trim(), due);
+      if (want <= 0n || want > fullDue || roundToMinor(want, lim.minor) !== want) throw badRequest('PAYMENT_AMOUNT_INVALID', { max: fromUnits(fullDue) });
+      if (want < lim.minAmount && want !== lim.next) throw badRequest('PAYMENT_AMOUNT_TOO_SMALL', { min: fromUnits(lim.minAmount), nextInstalment: lim.next > 0n ? fromUnits(lim.next) : null });
+      amount = want;
+      let left = want;
+      shares = shares.map((x) => { const take = min(left, x.amount); left -= take; return { b: x.b, amount: take }; }).filter((x) => x.amount > 0n);
+    }
     const gateway = input.model === 'platform' && (input.method === 'card' || input.method === 'wallet');
     const status = gateway ? 'pending' : 'awaiting_verification';
     const reported = input.reportedAmount ? toUnits(input.reportedAmount) : amount;
@@ -148,11 +192,11 @@ export async function createPayment(db: Db, config: Config, input: CreatePayment
       `INSERT INTO payments (order_id, customer_id, country_id, provider_id, rule_id, model, method, integration_id, account_id, purpose, amount, currency_code,
                              reported_amount, status, idempotency_key)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id, number`,
-      [o.id, input.customerId, o.country_id, input.model === 'direct' ? due[0]!.provider_id : null, rule.id, input.model, input.method,
+      [o.id, input.customerId, o.country_id, input.model === 'direct' ? shares[0]!.b.provider_id : null, rule.id, input.model, input.method,
         rule.integration_id, rule.account_id, input.purpose, fromUnits(amount), o.currency_code.trim(), gateway ? null : fromUnits(reported), status,
         input.idempotencyKey])).rows[0]!;
-    for (const b of due) {
-      await c.query('INSERT INTO payment_allocations (payment_id, booking_id, amount) VALUES ($1, $2, $3)', [p.id, b.id, fromUnits(dueFor(b, input.purpose))]);
+    for (const { b, amount: share } of shares) {
+      await c.query('INSERT INTO payment_allocations (payment_id, booking_id, amount) VALUES ($1, $2, $3)', [p.id, b.id, fromUnits(share)]);
     }
     await recordStatus(c, p.id, null, status, ctx, null);
 

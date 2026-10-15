@@ -7,3 +7,4 @@ export * from './party';
 export * from './calendar';
 export * from './status';
 export * from './reschedule';
+export * from './instalments';

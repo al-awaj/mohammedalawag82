@@ -47,6 +47,8 @@ export interface Quote {
   depositValue: string;
   upfrontAmount: string;
   balanceDueAt: Date | null;
+  /** Dated instalments splitting the balance when the service or package defines a plan (clause 46); null otherwise. */
+  instalments: Instalment[] | null;
   securityDepositAmount: string;
   requiresProviderApproval: boolean;
   serviceTitle: unknown;
@@ -56,12 +58,23 @@ export interface Quote {
   maxBookingsPerSlot: number | null;
 }
 
+export interface Instalment { seq: number; percent: string; amount: string; dueAt: Date }
+export type PlanStep = { percent: string; daysBefore: number };
+
+/** A plan splits the balance into 2 to 12 instalments, percentages summing to 100, each due a distinct number of days before the booking. */
+export const instalmentPlanInput = z.array(z.object({
+  percent: z.string().regex(/^\d{1,3}(\.\d{1,2})?$/),
+  daysBefore: z.number().int().min(0).max(730),
+})).min(2).max(12).refine((p) => p.reduce((a, x) => a + toUnits(x.percent), 0n) === toUnits('100'), { message: 'percentages must add up to 100' })
+  .refine((p) => p.every((x) => toUnits(x.percent) > 0n), { message: 'each percentage must be positive' })
+  .refine((p) => new Set(p.map((x) => x.daysBefore)).size === p.length, { message: 'each instalment needs a different due day' });
+
 interface SvcRow {
   id: string; service_type_id: string; provider_id: string; country_id: string; status: string; provider_status: string; title: unknown; terms: unknown;
   base_price: string; currency_code: string; pricing_unit: string; duration_minutes: number | null; capacity: number | null;
   requires_provider_approval: boolean; deposit_type: 'none' | 'fixed' | 'percent'; deposit_value: string; balance_due_days_before: number;
   booking_mode: 'time_slot' | 'full_day' | 'date_range' | 'quantity_rental'; capacity_mode: string; timezone: string;
-  cancellation_policy: unknown; type_active: boolean;
+  cancellation_policy: unknown; type_active: boolean; instalment_plan: PlanStep[] | null;
 }
 
 /**
@@ -72,7 +85,7 @@ export async function quote(exec: Executor, input: ItemInput, discount?: { amoun
   const s = (await exec.query<SvcRow>(
     `SELECT s.id, s.service_type_id, s.provider_id, s.country_id, s.status, p.status AS provider_status, s.title, s.terms, s.base_price, s.currency_code,
             s.pricing_unit, s.duration_minutes, s.capacity, s.requires_provider_approval, s.deposit_type, s.deposit_value,
-            s.balance_due_days_before, t.booking_mode, t.capacity_mode, t.is_active AS type_active, co.timezone,
+            s.balance_due_days_before, s.instalment_plan, t.booking_mode, t.capacity_mode, t.is_active AS type_active, co.timezone,
             CASE WHEN cp.id IS NULL THEN NULL ELSE jsonb_build_object('id', cp.id, 'name', cp.name, 'description', cp.description,
               'tiers', cp.tiers, 'depositRefundable', cp.deposit_refundable, 'selfCancelAllowed', cp.self_cancel_allowed,
               'requiresManualReview', cp.requires_manual_review) END AS cancellation_policy
@@ -85,7 +98,7 @@ export async function quote(exec: Executor, input: ItemInput, discount?: { amoun
   const pkg = input.packageId ? (await exec.query<{
     name: unknown; price: string; currency_code: string; pricing_unit: string; duration_minutes: number | null; add_ons: { code: string; name: unknown; price: string }[];
     terms: unknown; available_weekdays: number[]; max_bookings_per_slot: number; deposit_type: 'none' | 'fixed' | 'percent'; deposit_value: string;
-    balance_due_days_before: number; valid_from: string | null; valid_to: string | null; status: string;
+    balance_due_days_before: number; valid_from: string | null; valid_to: string | null; status: string; instalment_plan: PlanStep[] | null;
   }>('SELECT * FROM packages WHERE id = $1 AND service_id = $2', [input.packageId, s.id])).rows[0] : null;
   if (input.packageId && (!pkg || pkg.status !== 'active')) throw conflict('PACKAGE_NOT_AVAILABLE');
   if (!pkg && input.addOns.length) throw badRequest('ADD_ON_INVALID');
@@ -177,13 +190,33 @@ export async function quote(exec: Executor, input: ItemInput, discount?: { amoun
     balanceDueAt = null;
   }
 
+  // ---- Instalments: the balance is split by the plan; instalments already due by now are added to the upfront amount.
+  const plan = (pkg ? pkg.instalment_plan : null) ?? s.instalment_plan;
+  let instalments: Instalment[] | null = null;
+  if (plan?.length && balanceDueAt) {
+    const balance = total - upfront;
+    const steps = [...plan].sort((a, b) => b.daysBefore - a.daysBefore);
+    let left = balance;
+    const all = steps.map((st, i) => {
+      const amount = i === steps.length - 1 ? left : roundToMinor(percentOf(balance, st.percent), minor);
+      left -= amount;
+      return { percent: st.percent, amount, dueAt: new Date(start.getTime() - st.daysBefore * 86_400_000) };
+    });
+    const future = all.filter((x) => x.dueAt > now && x.amount > 0n);
+    upfront += sum(all.filter((x) => !future.includes(x)).map((x) => x.amount));
+    if (future.length >= 1) {
+      instalments = future.map((x, i) => ({ seq: i + 1, percent: x.percent, amount: fromUnits(x.amount), dueAt: x.dueAt }));
+      balanceDueAt = future[future.length - 1]!.dueAt;
+    } else balanceDueAt = null;
+  }
+
   return {
     serviceId: s.id, serviceTypeId: s.service_type_id, providerId: s.provider_id, countryId: s.country_id, packageId: input.packageId, rentalItemId: input.rentalItemId,
     start, end, calendarUnits: rental ? input.units : 1, units: input.units, guests: input.guests, currency, pricingUnit,
     unitPrice: fromUnits(unitPrice), quantityFactor: num % den === 0n ? String(num / den) : (Number(num) / Number(den)).toFixed(6),
     addOns: chosen.map((a) => ({ code: a.code, name: a.name, price: fromUnits(roundToMinor(toUnits(a.price), minor)) })),
     subtotal: fromUnits(subtotal), total: fromUnits(total),
-    discountAmount: fromUnits(disc.amount), discountPlatformBorne: fromUnits(disc.platformBorne), discountProviderBorne: fromUnits(disc.providerBorne), depositType, depositValue, upfrontAmount: fromUnits(upfront), balanceDueAt,
+    discountAmount: fromUnits(disc.amount), discountPlatformBorne: fromUnits(disc.platformBorne), discountProviderBorne: fromUnits(disc.providerBorne), depositType, depositValue, upfrontAmount: fromUnits(upfront), balanceDueAt, instalments,
     securityDepositAmount: rental ? fromUnits(mulDiv(toUnits(item!.security_deposit), input.units)) : '0.0000',
     requiresProviderApproval: s.requires_provider_approval,
     serviceTitle: s.title, packageName: pkg?.name ?? null, cancellationPolicy: s.cancellation_policy,

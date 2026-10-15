@@ -13,7 +13,7 @@ import { validateAttributes } from './fields.js';
 import { POLICY_COLUMNS, policyBody, policyParams } from './policies.js';
 import { serviceDetail } from './queries.js';
 import {
-  addOnSchema, assertCurrencyAllowed, assertDepositRules, assertDepositShape, conflictStatus, currencyCode, depositFields, i18nList,
+  addOnSchema, assertCurrencyAllowed, assertDepositRules, assertDepositShape, assertPlanShape, conflictStatus, currencyCode, depositFields, i18nList,
   loadFields, loadType, moneySchema, PRICING_UNITS, providerOf, recordServiceStatus, type ProviderRow, type TypeRow,
 } from './shared.js';
 
@@ -57,6 +57,7 @@ const serviceCreate = serviceFields.extend({
   depositType: z.enum(['none', 'fixed', 'percent']).default('none'),
   depositValue: moneySchema.default('0'),
   balanceDueDaysBefore: z.number().int().min(0).max(365).default(0),
+  instalmentPlan: depositFields.instalmentPlan.default(null),
 });
 
 const packageFields = z.object({
@@ -85,6 +86,7 @@ const packageCreate = packageFields.extend({
   validTo: z.iso.date().nullable().default(null), sortOrder: z.number().int().default(0), status: z.enum(['active', 'inactive']).default('active'),
   depositType: z.enum(['none', 'fixed', 'percent']).default('none'), depositValue: moneySchema.default('0'),
   balanceDueDaysBefore: z.number().int().min(0).max(365).default(0),
+  instalmentPlan: depositFields.instalmentPlan.default(null),
 });
 
 const rentalFields = z.object({
@@ -111,7 +113,7 @@ const rentalCreate = rentalFields.extend({
 
 interface ServiceRow {
   id: string; provider_id: string; service_type_id: string; country_id: string; status: string; base_price: string;
-  attributes: Record<string, unknown>; capacity: number | null; latitude: string | null; deposit_type: string; deposit_value: string;
+  attributes: Record<string, unknown>; capacity: number | null; latitude: string | null; deposit_type: string; deposit_value: string; instalment_plan: unknown[] | null;
 }
 
 async function lockOwnService(c: Executor, provider: ProviderRow, id: string): Promise<ServiceRow> {
@@ -222,6 +224,7 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
       const deposit = { type: b.depositType, value: b.depositValue };
       assertDepositShape(deposit, b.basePrice);
       assertDepositRules(type, deposit, b.basePrice);
+      assertPlanShape(b.depositType, b.instalmentPlan);
       if ((b.latitude === null) !== (b.longitude === null)) throw badRequest('VALIDATION_FAILED', [{ path: '/latitude', message: 'latitude and longitude go together' }]);
       const { active } = await loadFields(c, type.id);
       // Drafts may be incomplete: required-ness is enforced at submission, types and rules always.
@@ -231,12 +234,13 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
       const serviceId = (await c.query<{ id: string }>(
         `INSERT INTO services (provider_id, service_type_id, country_id, city, address, latitude, longitude, title, description, terms,
            base_price, currency_code, pricing_unit, duration_minutes, capacity, requires_provider_approval, cancellation_policy_id,
-           deposit_type, deposit_value, balance_due_days_before, attributes, max_concurrent_bookings, slot_step_minutes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
+           deposit_type, deposit_value, balance_due_days_before, attributes, max_concurrent_bookings, slot_step_minutes, instalment_plan)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING id`,
         [p.id, type.id, p.country_id, b.city, b.address, b.latitude, b.longitude, JSON.stringify(b.title), JSON.stringify(b.description),
           b.terms ? JSON.stringify(b.terms) : null, b.basePrice, b.currency, b.pricingUnit, b.durationMinutes ?? type.default_duration_minutes,
           b.capacity, b.requiresProviderApproval ?? type.default_requires_approval, b.cancellationPolicyId, b.depositType, b.depositValue,
-          b.balanceDueDaysBefore, JSON.stringify(v.value), b.maxConcurrentBookings, b.slotStepMinutes])).rows[0]!.id;
+          b.balanceDueDaysBefore, JSON.stringify(v.value), b.maxConcurrentBookings, b.slotStepMinutes,
+          b.instalmentPlan ? JSON.stringify(b.instalmentPlan) : null])).rows[0]!.id;
       await recordServiceStatus(c, serviceId, null, 'draft', requireUser(req).id, null);
       await audit(c, actorOf(req), { action: 'service.created', entityType: 'service', entityId: serviceId, after: b });
       return serviceId;
@@ -260,6 +264,8 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
       const deposit = { type: b.depositType ?? before.deposit_type, value: b.depositValue ?? (b.depositType === 'none' ? '0' : before.deposit_value) };
       assertDepositShape(deposit, price);
       assertDepositRules(type, deposit, price);
+      const plan = Object.hasOwn(b, 'instalmentPlan') ? b.instalmentPlan ?? null : before.instalment_plan;
+      assertPlanShape(deposit.type, plan);
 
       let attributes: Record<string, unknown> | null = null;
       if (b.attributes) {
@@ -282,7 +288,7 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
            cancellation_policy_id = CASE WHEN $20 THEN $21::uuid ELSE cancellation_policy_id END,
            deposit_type = $22, deposit_value = $23, balance_due_days_before = coalesce($24, balance_due_days_before),
            attributes = coalesce($25, attributes), max_concurrent_bookings = coalesce($26, max_concurrent_bookings),
-           slot_step_minutes = CASE WHEN $27 THEN $28::int ELSE slot_step_minutes END
+           slot_step_minutes = CASE WHEN $27 THEN $28::int ELSE slot_step_minutes END, instalment_plan = $29::jsonb
          WHERE id = $1`,
         [req.params.id, b.title ? JSON.stringify(b.title) : null, b.description ? JSON.stringify(b.description) : null,
           has('terms'), b.terms ? JSON.stringify(b.terms) : null, b.city ?? null, has('address'), b.address ?? null,
@@ -290,7 +296,7 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
           b.pricingUnit ?? null, has('durationMinutes'), b.durationMinutes ?? null, has('capacity'), b.capacity ?? null,
           b.requiresProviderApproval ?? null, has('cancellationPolicyId'), b.cancellationPolicyId ?? null, deposit.type, deposit.value,
           b.balanceDueDaysBefore ?? null, attributes ? JSON.stringify(attributes) : null, b.maxConcurrentBookings ?? null,
-          has('slotStepMinutes'), b.slotStepMinutes ?? null]);
+          has('slotStepMinutes'), b.slotStepMinutes ?? null, plan ? JSON.stringify(plan) : null]);
       const after = (await c.query('SELECT latitude, longitude FROM services WHERE id = $1', [req.params.id])).rows[0];
       if ((after.latitude === null) !== (after.longitude === null)) throw badRequest('VALIDATION_FAILED', [{ path: '/latitude', message: 'latitude and longitude go together' }]);
       // Price and terms changes are audited with before/after; existing bookings keep their own snapshot (phase 5).
@@ -357,14 +363,15 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
       const p = await providerOf(c, req, { forWrite: true });
       const { type } = await ownedServiceForChild(c, p, req.params.id);
       await checkPackage(c, p, type, b);
+      assertPlanShape(b.depositType, b.instalmentPlan);
       const pkgId = (await c.query<{ id: string }>(
         `INSERT INTO packages (service_id, name, description, price, currency_code, pricing_unit, duration_minutes, inclusions, add_ons, terms,
-           available_weekdays, max_bookings_per_slot, deposit_type, deposit_value, balance_due_days_before, valid_from, valid_to, sort_order, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
+           available_weekdays, max_bookings_per_slot, deposit_type, deposit_value, balance_due_days_before, valid_from, valid_to, sort_order, status, instalment_plan)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING id`,
         [req.params.id, JSON.stringify(b.name), b.description ? JSON.stringify(b.description) : null, b.price, b.currency, b.pricingUnit,
           b.durationMinutes, JSON.stringify(b.inclusions), JSON.stringify(b.addOns), b.terms ? JSON.stringify(b.terms) : null,
           [...new Set(b.availableWeekdays)], b.maxBookingsPerSlot, b.depositType, b.depositValue, b.balanceDueDaysBefore, b.validFrom, b.validTo,
-          b.sortOrder, b.status])).rows[0]!.id;
+          b.sortOrder, b.status, b.instalmentPlan ? JSON.stringify(b.instalmentPlan) : null])).rows[0]!.id;
       await audit(c, actorOf(req), { action: 'package.created', entityType: 'package', entityId: pkgId, after: { serviceId: req.params.id, ...b } });
       return pkgId;
     });
@@ -386,19 +393,22 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
       };
       await checkPackage(c, p, type, merged);
       const has = (k: string) => Object.hasOwn(b, k);
+      const plan = has('instalmentPlan') ? b.instalmentPlan ?? null : before.instalment_plan;
+      assertPlanShape(merged.depositType, plan);
       await c.query(
         `UPDATE packages SET name = coalesce($2, name), description = CASE WHEN $3 THEN $4::jsonb ELSE description END,
            price = $5, currency_code = $6, pricing_unit = $7, duration_minutes = CASE WHEN $8 THEN $9::int ELSE duration_minutes END,
            inclusions = coalesce($10, inclusions), add_ons = coalesce($11, add_ons), terms = CASE WHEN $12 THEN $13::jsonb ELSE terms END,
            available_weekdays = coalesce($14, available_weekdays), max_bookings_per_slot = coalesce($15, max_bookings_per_slot),
            deposit_type = $16, deposit_value = $17, balance_due_days_before = coalesce($18, balance_due_days_before),
-           valid_from = $19, valid_to = $20, sort_order = coalesce($21, sort_order), status = coalesce($22, status)
+           valid_from = $19, valid_to = $20, sort_order = coalesce($21, sort_order), status = coalesce($22, status), instalment_plan = $23::jsonb
          WHERE id = $1`,
         [req.params.id, b.name ? JSON.stringify(b.name) : null, has('description'), b.description ? JSON.stringify(b.description) : null,
           merged.price, merged.currency, merged.pricingUnit, has('durationMinutes'), b.durationMinutes ?? null,
           b.inclusions ? JSON.stringify(b.inclusions) : null, b.addOns ? JSON.stringify(b.addOns) : null, has('terms'),
           b.terms ? JSON.stringify(b.terms) : null, b.availableWeekdays ? [...new Set(b.availableWeekdays)] : null, b.maxBookingsPerSlot ?? null,
-          merged.depositType, merged.depositValue, b.balanceDueDaysBefore ?? null, merged.validFrom, merged.validTo, b.sortOrder ?? null, b.status ?? null]);
+          merged.depositType, merged.depositValue, b.balanceDueDaysBefore ?? null, merged.validFrom, merged.validTo, b.sortOrder ?? null, b.status ?? null,
+          plan ? JSON.stringify(plan) : null]);
       await audit(c, actorOf(req), { action: 'package.updated', entityType: 'package', entityId: req.params.id, before, after: b });
       return { id: req.params.id };
     });

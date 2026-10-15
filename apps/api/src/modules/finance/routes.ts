@@ -58,7 +58,7 @@ export async function financeRoutes(app: App, deps: Deps) {
       headers: z.object({ 'idempotency-key': z.string().min(8).max(100).optional() }).passthrough(),
       body: z.object({
         model: z.enum(['platform', 'direct']), method: z.enum(['card', 'wallet', 'bank_transfer', 'cash']), purpose: z.enum(['upfront', 'balance']),
-        bookingIds: z.array(z.uuid()).min(1).max(50).optional(), reportedAmount: money.optional(),
+        bookingIds: z.array(z.uuid()).min(1).max(50).optional(), reportedAmount: money.optional(), amount: money.optional(),
       }),
     },
   }, async (req, reply) => {

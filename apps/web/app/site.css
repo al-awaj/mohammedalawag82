@@ -168,3 +168,9 @@ body { overflow-x: hidden; }
 .faq > summary::after { content: "+"; color: var(--primary); font-size: 1.3rem; line-height: 1; transition: transform .2s; }
 .faq[open] > summary::after { transform: rotate(45deg); }
 .faq > div { margin-top: 10px; color: var(--muted); }
+
+/* Partial balance payment */
+.partial-pay { display: grid; gap: 10px; margin-top: 6px; }
+.pick { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: .88rem; font-weight: 600; cursor: pointer; }
+.pick:hover { border-color: var(--primary); }
+.pick-active { border-color: var(--primary); background: var(--primary-soft, rgba(124, 58, 237, .1)); color: var(--primary); }

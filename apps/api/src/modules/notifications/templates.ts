@@ -37,6 +37,7 @@ export const DEFAULT_TEMPLATES: Record<string, { ar: string; en: string; subject
   'booking.cancellation_approved': { ar: 'تمت الموافقة على إلغاء الحجز {{number}}', en: 'Cancellation of booking {{number}} was approved' },
   'booking.cancellation_rejected': { ar: 'لم تتم الموافقة على إلغاء الحجز {{number}}: {{reason}}', en: 'Cancellation of booking {{number}} was not approved: {{reason}}' },
   'booking.balance_reminder': { ar: 'تذكير: المتبقي على الحجز {{number}} هو {{remaining}} {{currency}} ويستحق في {{dueDate}}', en: 'Reminder: {{remaining}} {{currency}} remains on booking {{number}}, due {{dueDate}}' },
+  'booking.instalment_reminder': { ar: 'تذكير: القسط رقم {{instalment}} على الحجز {{number}} يستحق في {{dueDate}}، والمطلوب لإتمامه {{remaining}} {{currency}}', en: 'Reminder: instalment {{instalment}} on booking {{number}} is due {{dueDate}}; {{remaining}} {{currency}} completes it' },
   'booking.payment_overdue': { ar: 'تأخر سداد المتبقي على الحجز {{number}}: {{remaining}} {{currency}}', en: 'The remaining {{remaining}} {{currency}} on booking {{number}} is overdue' },
   'booking.event_reminder': { ar: 'تذكير: موعد الحجز {{number}} يقترب ({{startDate}})', en: 'Reminder: booking {{number}} is coming up ({{startDate}})' },
   'event.budget_exceeded': { ar: 'تجاوزت تكلفة مناسبتك "{{name}}" الميزانية', en: 'Your event "{{name}}" is over budget' },

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { formatDateTime, formatMoney, localized } from '@events/shared';
+import { formatDate, formatDateTime, formatMoney, localized } from '@events/shared';
 import { api } from '../../lib/api';
 import { useAction, useGet, useSession } from '../../lib/session';
 import { useTr } from '../../lib/i18n';
@@ -9,7 +9,7 @@ import { RequireLogin } from '../../components/require-login';
 import { EventPicker } from '../../components/event-picker';
 import { Badge, Button, Card, ErrorText, Field, H2, Loading, Money, Notice, P, Row, Screen } from '../../components/ui';
 
-type Booking = { id: string; number: string; orderId: string; status: string; serviceTitle: Record<string, string>; startAt: string; endAt: string; total: string; paidAmount: string; remainingAmount: string; currency: string; providerName: string | null; cancellationPolicy: { description: Record<string, string> } | null; eventId: string | null };
+type Booking = { id: string; number: string; orderId: string; status: string; serviceTitle: Record<string, string>; startAt: string; endAt: string; total: string; paidAmount: string; remainingAmount: string; instalmentPlan: { seq: number; percent: string; amount: string; dueAt: string }[] | null; currency: string; providerName: string | null; cancellationPolicy: { description: Record<string, string> } | null; eventId: string | null };
 type Preview = { mode: string; refund: string; retained: string };
 
 export default function BookingScreen() {
@@ -46,6 +46,9 @@ function BookingView() {
         <Text>{tr({ ar: 'الإجمالي', en: 'Total' })}: <Money amount={d.total} currency={d.currency} /></Text>
         <Text>{tr({ ar: 'المدفوع', en: 'Paid' })}: <Money amount={d.paidAmount} currency={d.currency} /></Text>
         <Text>{tr({ ar: 'المتبقي', en: 'Remaining' })}: <Money amount={d.remainingAmount} currency={d.currency} /></Text>
+        {d.instalmentPlan?.map((i) => (
+          <Text key={i.seq}>{tr({ ar: 'القسط', en: 'Instalment' })} {i.seq}: <Money amount={i.amount} currency={d.currency} /> · {formatDate(i.dueAt, lang)}</Text>
+        ))}
       </Card>
       <EventPicker value={d.eventId} path={`/v1/bookings/${d.id}/event`} />
       {!!reschedules.data?.length && (

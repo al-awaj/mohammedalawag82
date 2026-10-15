@@ -18,7 +18,7 @@ export async function serviceDetail(exec: Executor, id: string, opts: { audience
             s.city, s.address, s.latitude::float8 AS latitude, s.longitude::float8 AS longitude, s.title, s.description, s.terms,
             s.base_price AS "basePrice", s.currency_code AS currency, s.pricing_unit AS "pricingUnit", s.duration_minutes AS "durationMinutes",
             s.capacity, s.requires_provider_approval AS "requiresProviderApproval", s.deposit_type AS "depositType", s.deposit_value AS "depositValue",
-            s.balance_due_days_before AS "balanceDueDaysBefore", s.attributes,
+            s.balance_due_days_before AS "balanceDueDaysBefore", s.instalment_plan AS "instalmentPlan", s.attributes,
             s.max_concurrent_bookings AS "maxConcurrentBookings", s.slot_step_minutes AS "slotStepMinutes", co.timezone, s.status, s.status_reason AS "statusReason",
             s.published_at AS "publishedAt", s.created_at AS "createdAt", s.updated_at AS "updatedAt",
             t.code AS "typeCode", t.name AS "typeName", t.booking_mode AS "bookingMode", t.capacity_mode AS "capacityMode",
@@ -44,7 +44,7 @@ export async function serviceDetail(exec: Executor, id: string, opts: { audience
   const packages = (await exec.query(
     `SELECT id, name, description, price, currency_code AS currency, pricing_unit AS "pricingUnit", duration_minutes AS "durationMinutes",
             inclusions, add_ons AS "addOns", terms, available_weekdays AS "availableWeekdays", max_bookings_per_slot AS "maxBookingsPerSlot",
-            deposit_type AS "depositType", deposit_value AS "depositValue", balance_due_days_before AS "balanceDueDaysBefore",
+            deposit_type AS "depositType", deposit_value AS "depositValue", balance_due_days_before AS "balanceDueDaysBefore", instalment_plan AS "instalmentPlan",
             valid_from AS "validFrom", valid_to AS "validTo", sort_order AS "sortOrder", status
        FROM packages WHERE service_id = $1
         AND ($2 = false OR (status = 'active' AND (valid_from IS NULL OR valid_from <= current_date) AND (valid_to IS NULL OR valid_to >= current_date)))
