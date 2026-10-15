@@ -3,13 +3,14 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import type { ApiClient } from '@events/shared';
 import { useAction, useApp, useT } from '../client';
 import { Button, ErrorBox, Modal, Notice } from './basics';
+import { GeoInput, type Geo } from './map';
 
 type L = string | { ar: string; en: string };
 export interface Option { value: string; label: L }
 export interface FieldSpec {
   name: string;
   label: L;
-  type?: 'text' | 'textarea' | 'number' | 'decimal' | 'select' | 'multiselect' | 'checkbox' | 'date' | 'datetime' | 'i18n' | 'json' | 'password' | 'email' | 'tel' | 'file';
+  type?: 'text' | 'textarea' | 'number' | 'decimal' | 'select' | 'multiselect' | 'checkbox' | 'date' | 'datetime' | 'i18n' | 'json' | 'password' | 'email' | 'tel' | 'file' | 'geo';
   required?: boolean;
   options?: Option[];
   placeholder?: string;
@@ -33,10 +34,18 @@ function initial(fields: FieldSpec[]): Record<string, unknown> {
       v[f.name] = f.type === 'json' ? JSON.stringify(f.defaultValue, null, 2)
         : f.type === 'i18n' ? { ar: '', en: '', ...(f.defaultValue as object) }
         : f.type === 'datetime' && typeof f.defaultValue === 'string' ? toLocalInput(f.defaultValue)
+        : f.type === 'geo' ? geoOf(f.defaultValue)
         : f.defaultValue;
     } else v[f.name] = f.type === 'checkbox' ? false : f.type === 'i18n' ? { ar: '', en: '' } : f.type === 'multiselect' ? [] : '';
   }
   return v;
+}
+
+/** {lat, lng} from numbers or numeric strings; null when either is missing. */
+function geoOf(v: unknown): Geo | null {
+  const o = v as { lat?: unknown; lng?: unknown } | null;
+  if (o?.lat === null || o?.lat === undefined || o.lng === null || o.lng === undefined || o.lat === '' || o.lng === '') return null;
+  return { lat: Number(o.lat), lng: Number(o.lng) };
 }
 
 function toLocalInput(iso: string) {
@@ -76,6 +85,7 @@ export function collect(fields: FieldSpec[], raw: Record<string, unknown>): { va
         break;
       }
       case 'datetime': values[f.name] = new Date(String(v)).toISOString(); break;
+      case 'geo': values[f.name] = v; break;
       case 'text': case 'textarea': case undefined: values[f.name] = String(v).trim(); break;
       default: values[f.name] = v;
     }
@@ -135,6 +145,9 @@ export function FieldInput({ field, value, onChange, error }: { field: FieldSpec
       );
       break;
     }
+    case 'geo':
+      input = <GeoInput id={id} value={(value as Geo | null) ?? null} onChange={onChange} />;
+      break;
     case 'file':
       input = <input {...common} type="file" onChange={(e) => onChange(e.target.files?.[0] ?? null)} />;
       break;

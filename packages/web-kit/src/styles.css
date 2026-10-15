@@ -222,3 +222,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 @keyframes nav-progress { 0% { transform: scaleX(0); opacity: 1; } 70% { transform: scaleX(.85); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
 .resched-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--border); }
 .resched-row:first-of-type { border-top: 0; }
+
+/* Maps */
+.map-embed { width: 100%; border: 1px solid var(--border); border-radius: 14px; display: block; background: var(--surface-2); }
+.location-card { display: grid; gap: 10px; }
+.geo-input { display: grid; gap: 8px; }
+.geo-input .row input { flex: 1; min-width: 0; }

@@ -7,7 +7,7 @@ import { useApp, useGet, useSession, useTr } from '@events/web-kit/client';
 import { Button, ErrorBox, Notice } from '@events/web-kit/ui';
 
 export interface PublicService {
-  id: string; title: Record<string, string>; description: Record<string, string>; terms: Record<string, string> | null; city: string; countryCode: string;
+  id: string; title: Record<string, string>; description: Record<string, string>; terms: Record<string, string> | null; city: string; countryCode: string; address?: string | null; latitude?: number | null; longitude?: number | null;
   basePrice: string; currency: string; pricingUnit: string; durationMinutes: number | null; capacity: number | null; requiresProviderApproval: boolean;
   depositType: string; depositValue: string; typeName: Record<string, string>; bookingMode: 'time_slot' | 'full_day' | 'date_range' | 'quantity_rental'; capacityMode: string;
   providerName: string | null; providerId: string | null; attributes: Record<string, unknown>;

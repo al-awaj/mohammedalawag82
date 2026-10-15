@@ -6,7 +6,7 @@ export interface ServiceType {
   depositRequired: boolean; minDepositPercent: string | null; fields: import('./fields').TypeField[];
 }
 export interface Service {
-  id: string; serviceTypeId: string; title: Record<string, string>; description: Record<string, string>; terms: Record<string, string> | null; city: string; address: string | null;
+  id: string; serviceTypeId: string; title: Record<string, string>; description: Record<string, string>; terms: Record<string, string> | null; city: string; address: string | null; latitude: number | null; longitude: number | null;
   basePrice: string; currency: string; pricingUnit: string; durationMinutes: number | null; capacity: number | null; requiresProviderApproval: boolean;
   depositType: string; depositValue: string; balanceDueDaysBefore: number; instalmentPlan: PlanStep[] | null; attributes: Record<string, unknown>; maxConcurrentBookings: number; slotStepMinutes: number | null;
   status: string; statusReason: string | null; typeName: Record<string, string>; bookingMode: string; capacityMode: string;
@@ -48,8 +48,12 @@ export function parsePlan(v: unknown): PlanStep[] | null {
   });
 }
 
-/** Replaces the plan text with the parsed plan in a form body. */
-export const withPlan = (v: Record<string, unknown>) => ({ ...v, instalmentPlan: parsePlan(v.instalmentPlan) });
+/** Replaces the plan text with the parsed plan and the map location with coordinates in a form body. */
+export const withPlan = (v: Record<string, unknown>) => {
+  const { location, ...rest } = v;
+  const geo = location as { lat: number; lng: number } | undefined;
+  return { ...rest, instalmentPlan: parsePlan(v.instalmentPlan), ...('location' in v || 'city' in v ? { latitude: geo?.lat ?? null, longitude: geo?.lng ?? null } : {}) };
+};
 
 const UNIT_LABEL: Record<string, { ar: string; en: string }> = {
   fixed: { ar: 'سعر ثابت', en: 'Fixed price' }, per_hour: { ar: 'بالساعة', en: 'Per hour' }, per_day: { ar: 'باليوم', en: 'Per day' },
@@ -63,6 +67,8 @@ export function serviceFields(type: ServiceType, s: Partial<Service> | undefined
     { name: 'terms', label: { ar: 'شروط الخدمة', en: 'Service terms' }, type: 'i18n', defaultValue: s?.terms ?? undefined },
     { name: 'city', label: { ar: 'المدينة', en: 'City' }, required: true, defaultValue: s?.city },
     { name: 'address', label: { ar: 'العنوان', en: 'Address' }, defaultValue: s?.address ?? undefined },
+    { name: 'location', label: { ar: 'الموقع على الخريطة', en: 'Location on the map' }, type: 'geo', defaultValue: { lat: s?.latitude, lng: s?.longitude },
+      help: { ar: 'الصق الإحداثيات أو رابط الموقع من خرائط Google، أو استخدم موقعك الحالي. يظهر للعملاء على الخريطة ويُستخدم في البحث القريب.', en: 'Paste coordinates or a Google Maps link, or use your current location. Customers see it on a map and it powers nearby search.' } },
     { name: 'basePrice', label: { ar: 'السعر', en: 'Price' }, type: 'decimal', required: true, defaultValue: s?.basePrice },
     { name: 'currency', label: { ar: 'العملة', en: 'Currency' }, type: 'select', required: true, options: currencies, defaultValue: s?.currency },
     { name: 'pricingUnit', label: { ar: 'طريقة التسعير', en: 'Pricing unit' }, type: 'select', required: true, defaultValue: s?.pricingUnit ?? type.pricingUnits[0],

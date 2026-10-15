@@ -70,6 +70,17 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
             ))}
           </div>
         )}
+        {s.latitude != null && s.longitude != null && (
+          <div className="card" data-testid="service-map">
+            <h2>{ar ? 'الموقع' : 'Location'}</h2>
+            <iframe className="map-embed" title={ar ? 'الخريطة' : 'Map'} loading="lazy" referrerPolicy="no-referrer" style={{ height: 280 }}
+              src={`https://www.openstreetmap.org/export/embed.html?bbox=${s.longitude - 0.006},${s.latitude - 0.006},${s.longitude + 0.006},${s.latitude + 0.006}&layer=mapnik&marker=${s.latitude},${s.longitude}`} />
+            <div className="row gap wrap" style={{ marginTop: 10, justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="muted">{[s.address, s.city].filter(Boolean).join('، ')}</span>
+              <a className="btn btn-secondary" href={`https://www.google.com/maps/search/?api=1&query=${s.latitude},${s.longitude}`} target="_blank" rel="noopener noreferrer">{ar ? 'افتح في الخرائط' : 'Open in maps'}</a>
+            </div>
+          </div>
+        )}
         <div className="card">
           <h2>{ar ? 'سياسة الإلغاء' : 'Cancellation policy'}</h2>
           {policy ? <>

@@ -32,6 +32,7 @@ export function eventFields(lang: 'ar' | 'en', currencies: string[], current?: R
       options: EVENT_TYPES.map((t) => ({ value: t, label: { ar: enumLabel('eventType', t, 'ar'), en: enumLabel('eventType', t, 'en') } })) },
     { name: 'city', label: { ar: 'المدينة', en: 'City' }, required: true, defaultValue: current?.city },
     { name: 'location', label: { ar: 'الموقع أو العنوان', en: 'Venue or address' }, defaultValue: current?.location },
+    { name: 'geo', label: { ar: 'مكان المناسبة على الخريطة (اختياري)', en: 'Event place on the map (optional)' }, type: 'geo', defaultValue: { lat: current?.latitude, lng: current?.longitude } },
     { name: 'eventDate', label: { ar: 'تاريخ المناسبة', en: 'Date' }, type: 'date', required: true, defaultValue: typeof current?.eventDate === 'string' ? current.eventDate.slice(0, 10) : undefined },
     { name: 'startsAt', label: { ar: 'وقت البداية', en: 'Starts at' }, type: 'datetime', defaultValue: local(current?.startsAt) },
     { name: 'endsAt', label: { ar: 'وقت النهاية', en: 'Ends at' }, type: 'datetime', defaultValue: local(current?.endsAt) },
@@ -52,7 +53,9 @@ export function eventFields(lang: 'ar' | 'en', currencies: string[], current?: R
 
 /** Body for POST/PATCH: a budget without an amount carries no currency, and empty optional fields are sent as null on edit. */
 export function eventBody(v: Record<string, unknown>, editing: boolean): Record<string, unknown> {
-  const body: Record<string, unknown> = { ...v };
+  const { geo, ...rest } = v;
+  const g = geo as { lat: number; lng: number } | undefined;
+  const body: Record<string, unknown> = { ...rest, ...(g || editing ? { latitude: g?.lat ?? null, longitude: g?.lng ?? null } : {}) };
   if (!body.budgetAmount) delete body.budgetCurrency;
   if (editing) {
     for (const k of ['location', 'startsAt', 'endsAt', 'expectedGuests', 'budgetAmount', 'budgetCurrency', 'notes']) if (!(k in body)) body[k] = null;

@@ -3,12 +3,12 @@ import Link from 'next/link';
 import { use } from 'react';
 import { enumLabel, formatDateTime, localized } from '@events/shared';
 import { useAction, useApp, useGet, useTr } from '@events/web-kit/client';
-import { ActionButton, Badge, Button, Card, DataTable, DateTime, Detail, Empty, ErrorBox, Loading, Money, Notice, Page } from '@events/web-kit/ui';
+import { ActionButton, Badge, Button, Card, DataTable, DateTime, Detail, Empty, ErrorBox, LocationCard, Loading, Money, Notice, Page } from '@events/web-kit/ui';
 import { eventBody, eventFields, useCountryCurrencies } from '@/lib/events';
 
 interface EventBooking { id: string; number: string; status: string; serviceTitle: Record<string, string>; startAt: string; total: string; upfrontAmount: string; paidAmount: string; remainingAmount: string; currency: string }
 interface EventDetail {
-  id: string; name: string; eventType: string; countryCode: string; city: string; location: string | null; eventDate: string; startsAt: string | null; endsAt: string | null;
+  id: string; name: string; eventType: string; countryCode: string; city: string; location: string | null; latitude: string | number | null; longitude: string | number | null; eventDate: string; startsAt: string | null; endsAt: string | null;
   expectedGuests: number | null; budgetAmount: string | null; budgetCurrency: string | null; notes: string | null; status: string;
   bookings: EventBooking[];
   totals: Record<string, { committedTotal: string; upfrontTotal: string; paidTotal: string; remainingTotal: string; bookings: number }>;
@@ -51,6 +51,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           [tr({ ar: 'الضيوف المتوقعون', en: 'Expected guests' }), e.expectedGuests ?? '—'],
           [tr({ ar: 'ملاحظات', en: 'Notes' }), e.notes ?? '—'],
         ]} />
+        <LocationCard lat={e.latitude} lng={e.longitude} address={e.location} />
       </Card>
 
       <Card title={tr({ ar: 'الميزانية', en: 'Budget' })}>

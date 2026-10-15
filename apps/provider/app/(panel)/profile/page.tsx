@@ -33,11 +33,10 @@ export default function ProfilePage() {
           { name: 'city', label: { ar: 'المدينة', en: 'City' }, required: true, defaultValue: me.city },
           { name: 'address', label: { ar: 'العنوان', en: 'Address' }, defaultValue: me.address ?? '' },
           { name: 'description', label: { ar: 'نبذة عن النشاط', en: 'About the business' }, type: 'textarea', defaultValue: me.description ?? '' },
-          { name: 'latitude', label: { ar: 'خط العرض', en: 'Latitude' }, type: 'decimal', defaultValue: me.latitude ?? '' },
-          { name: 'longitude', label: { ar: 'خط الطول', en: 'Longitude' }, type: 'decimal', defaultValue: me.longitude ?? '' },
+          { name: 'location', label: { ar: 'الموقع على الخريطة', en: 'Location on the map' }, type: 'geo', defaultValue: { lat: me.latitude, lng: me.longitude } },
         ]} onSubmit={(v) => save.mutate({
           city: v.city, address: v.address ?? null, description: v.description ?? null,
-          latitude: v.latitude !== undefined ? Number(v.latitude) : null, longitude: v.longitude !== undefined ? Number(v.longitude) : null,
+          latitude: (v.location as { lat: number } | undefined)?.lat ?? null, longitude: (v.location as { lng: number } | undefined)?.lng ?? null,
         })} />
       </Card>
 

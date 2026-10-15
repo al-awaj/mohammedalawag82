@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { Image, Linking, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { formatDate, formatMoney, formatTime, localized } from '@events/shared';
@@ -9,7 +9,7 @@ import { useTr } from '../../lib/i18n';
 import { Button, Card, Choice, colors, ErrorText, Field, H1, H2, Loading, Notice, P, Row, Screen } from '../../components/ui';
 
 interface Service {
-  id: string; title: Record<string, string>; description: Record<string, string>; city: string; basePrice: string; currency: string; requiresProviderApproval: boolean;
+  id: string; title: Record<string, string>; description: Record<string, string>; city: string; address: string | null; latitude: number | null; longitude: number | null; basePrice: string; currency: string; requiresProviderApproval: boolean;
   typeName: Record<string, string>; bookingMode: string; capacityMode: string; capacity: number | null; providerName: string | null; providerId: string | null; durationMinutes: number | null;
   cancellationPolicy: { description: Record<string, string>; depositRefundable: boolean } | null;
   packages: { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; inclusions: Record<string, string>[] | null; addOns: { code: string; name: Record<string, string>; price: string }[]; durationMinutes: number | null; terms: Record<string, string> | null }[];
@@ -106,6 +106,14 @@ export default function ServiceScreen() {
       <H1>{localized(svc.title, lang)}</H1>
       <P muted>{localized(svc.typeName, lang)} · {svc.city}{svc.providerName ? ` · ${svc.providerName}` : ''}{svc.rating.average ? ` · ★ ${svc.rating.average} (${svc.rating.count})` : ''}</P>
       {svc.providerId && svc.providerName ? <Button variant="secondary" testID="open-provider" title={tr({ ar: `صفحة ${svc.providerName}`, en: `About ${svc.providerName}` })} onPress={() => router.push(`/provider/${svc.providerId}`)} /> : null}
+      {svc.latitude != null && svc.longitude != null ? (
+        <Button variant="secondary" testID="open-map" title={`📍 ${tr({ ar: 'افتح الموقع في الخرائط', en: 'Open location in maps' })}${svc.address ? ` — ${svc.address}` : ''}`} onPress={() => {
+          const q = `${svc.latitude},${svc.longitude}`;
+          const native = Platform.select({ ios: `maps:0,0?q=${q}`, android: `geo:0,0?q=${q}` });
+          const web = `https://www.google.com/maps/search/?api=1&query=${q}`;
+          void (native ? Linking.openURL(native).catch(() => Linking.openURL(web)) : Linking.openURL(web));
+        }} />
+      ) : null}
       <P>{localized(svc.description, lang)}</P>
       {videos.length > 0 && <Row>{videos.map((v, i) => (
         <Button key={v.id} variant="secondary" title={`▶ ${tr({ ar: 'فيديو', en: 'Video' })} ${i + 1}`} onPress={() => void WebBrowser.openBrowserAsync(`${API_URL}${v.url}`)} />
