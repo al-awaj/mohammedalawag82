@@ -1,6 +1,6 @@
 'use client';
 import { use } from 'react';
-import { useApp, useGet, useTr } from '@events/web-kit/client';
+import { useApp, useCan, useGet, useTr } from '@events/web-kit/client';
 import { ActionButton, Card, DataTable, Detail, ErrorBox, Loading, Page, reasonField, Text, type FieldSpec } from '@events/web-kit/ui';
 import { localized } from '@events/shared';
 import { raw } from '@/lib/util';
@@ -10,9 +10,9 @@ interface Field { id: string; key: string; label: Record<string, string>; helpTe
 interface Type {
   id: string; code: string; name: Record<string, string>; booking_mode: string; capacity_mode: string; default_requires_approval: boolean; default_duration_minutes: number | null;
   buffer_before_minutes: number; buffer_after_minutes: number; pricing_units: string[]; allows_packages: boolean; min_images: number; max_images: number; allows_video: boolean;
-  required_documents: string[]; deposit_required: boolean; min_deposit_percent: string | null; provider_can_create: boolean; is_active: boolean; fields: Field[];
+  required_documents: string[]; deposit_required: boolean; min_deposit_percent: string | null; provider_can_create: boolean; is_active: boolean; default_cancellation_policy_id: string | null; fields: Field[];
 }
-const DATA_TYPES = raw('text', 'textarea', 'i18n_text', 'number', 'integer', 'boolean', 'select', 'multiselect', 'date', 'url');
+const DATA_TYPES = raw('text', 'textarea', 'i18n_text', 'number', 'integer', 'boolean', 'select', 'multiselect', 'date', 'url', 'time', 'location');
 
 const fieldSpecs = (f?: Field): FieldSpec[] => [
   ...(f ? [] : [{ name: 'key', label: { ar: 'المفتاح', en: 'Key' }, required: true, help: { ar: 'مثل: seats', en: 'e.g. seats' } } as FieldSpec]),
@@ -32,7 +32,10 @@ export default function TypePage({ params }: { params: Promise<{ id: string }> }
   const { id } = use(params);
   const tr = useTr();
   const { lang } = useApp();
+  const can = useCan();
   const { data: t, error, isLoading } = useGet<Type>(`/v1/admin/service-types/${id}`);
+  const policies = (useGet<{ id: string; name: Record<string, string>; isActive: boolean }[]>(can('services.manage') ? '/v1/admin/cancellation-policies' : null).data ?? [])
+    .filter((p) => p.isActive).map((p) => ({ value: p.id, label: { ar: p.name.ar ?? p.name.en ?? '', en: p.name.en ?? p.name.ar ?? '' } }));
   if (isLoading) return <Loading />;
   if (error || !t) return <ErrorBox error={error} />;
   return (
@@ -48,8 +51,15 @@ export default function TypePage({ params }: { params: Promise<{ id: string }> }
         { name: 'allowsPackages', label: { ar: 'يسمح بالباقات', en: 'Allows packages' }, type: 'checkbox', defaultValue: t.allows_packages },
         { name: 'providerCanCreate', label: { ar: 'يستطيع صاحب الخدمة الإنشاء', en: 'Providers can create' }, type: 'checkbox', defaultValue: t.provider_can_create },
         { name: 'isActive', label: { ar: 'مفعّل', en: 'Active' }, type: 'checkbox', defaultValue: t.is_active },
+        { name: 'requiredDocuments', label: { ar: 'الوثائق المطلوبة لكل خدمة', en: 'Documents required per service' }, defaultValue: t.required_documents.join(', '),
+          help: { ar: 'رموز مفصولة بفواصل، مثل: commercial_license, civil_defense_permit. يرفعها صاحب الخدمة قبل إرسالها للمراجعة.', en: 'Comma-separated codes, e.g. commercial_license, civil_defense_permit. Providers upload them before submitting a service.' } },
+        ...(policies.length ? [{ name: 'defaultCancellationPolicyId', label: { ar: 'سياسة الإلغاء الافتراضية', en: 'Default cancellation policy' }, type: 'select', options: policies,
+          defaultValue: t.default_cancellation_policy_id ?? undefined, help: { ar: 'تُطبق على خدمات هذا النوع التي لا يختار لها صاحبها سياسة.', en: 'Applies to services of this type whose provider picks none.' } } as FieldSpec] : []),
         reasonField(false),
-      ]} run={(api, v) => api.patch(`/v1/admin/service-types/${id}`, v)} />
+      ]} run={(api, v) => api.patch(`/v1/admin/service-types/${id}`, {
+        ...v, requiredDocuments: String(v.requiredDocuments ?? '').split(/[,،\s]+/).map((x) => x.trim()).filter(Boolean),
+        ...(policies.length ? { defaultCancellationPolicyId: v.defaultCancellationPolicyId ?? null } : {}),
+      })} />
     }>
       <Card>
         <Detail items={[
@@ -58,6 +68,7 @@ export default function TypePage({ params }: { params: Promise<{ id: string }> }
           [tr({ ar: 'السعة', en: 'Capacity' }), t.capacity_mode],
           [tr({ ar: 'وحدات التسعير', en: 'Pricing units' }), t.pricing_units.join(', ')],
           [tr({ ar: 'العربون', en: 'Deposit' }), t.deposit_required ? `✓ ≥ ${t.min_deposit_percent ?? 0}%` : '✗'],
+          [tr({ ar: 'الوثائق المطلوبة', en: 'Required documents' }), t.required_documents.join('، ') || '—'],
           [tr({ ar: 'الصور', en: 'Images' }), `${t.min_images} – ${t.max_images}`],
           [tr({ ar: 'المستندات المطلوبة', en: 'Required documents' }), t.required_documents.join(', ') || '—'],
           [tr({ ar: 'مفعّل', en: 'Active' }), t.is_active ? '✓' : '✗'],

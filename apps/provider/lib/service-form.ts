@@ -3,7 +3,7 @@ import type { FieldSpec, Option } from '@events/web-kit/ui';
 export interface ServiceType {
   id: string; code: string; name: Record<string, string>; bookingMode: string; capacityMode: string; defaultRequiresApproval: boolean;
   defaultDurationMinutes: number | null; pricingUnits: string[]; allowsPackages: boolean; minImages: number; maxImages: number; allowsVideo: boolean;
-  depositRequired: boolean; minDepositPercent: string | null; fields: import('./fields').TypeField[];
+  depositRequired: boolean; minDepositPercent: string | null; requiredDocuments?: string[]; fields: import('./fields').TypeField[];
 }
 export interface Service {
   id: string; serviceTypeId: string; title: Record<string, string>; description: Record<string, string>; terms: Record<string, string> | null; city: string; address: string | null; latitude: number | null; longitude: number | null;
@@ -54,6 +54,13 @@ export const withPlan = (v: Record<string, unknown>) => {
   const geo = location as { lat: number; lng: number } | undefined;
   return { ...rest, instalmentPlan: parsePlan(v.instalmentPlan), ...('location' in v || 'city' in v ? { latitude: geo?.lat ?? null, longitude: geo?.lng ?? null } : {}) };
 };
+
+/** Names of document types the starter catalog uses; other codes are shown as typed by the administration. */
+export const DOC_LABEL: Record<string, { ar: string; en: string }> = {
+  commercial_license: { ar: 'السجل أو الترخيص التجاري', en: 'Commercial licence' }, civil_defense_permit: { ar: 'تصريح الدفاع المدني', en: 'Civil defence permit' },
+  food_safety_certificate: { ar: 'شهادة سلامة الغذاء', en: 'Food safety certificate' }, vehicle_registration: { ar: 'رخصة سير المركبة', en: 'Vehicle registration' },
+};
+export const docLabel = (code: string) => DOC_LABEL[code] ?? { ar: code, en: code };
 
 const UNIT_LABEL: Record<string, { ar: string; en: string }> = {
   fixed: { ar: 'سعر ثابت', en: 'Fixed price' }, per_hour: { ar: 'بالساعة', en: 'Per hour' }, per_day: { ar: 'باليوم', en: 'Per day' },

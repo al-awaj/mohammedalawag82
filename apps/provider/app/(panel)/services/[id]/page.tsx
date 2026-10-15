@@ -2,12 +2,12 @@
 import { use, useState } from 'react';
 import { localized } from '@events/shared';
 import { useAction, useApp, useGet, useTr } from '@events/web-kit/client';
-import { ActionButton, Badge, Card, DataTable, ErrorBox, Form, Loading, Money, Notice, Page, Tabs, Text, type FieldSpec } from '@events/web-kit/ui';
+import { ActionButton, ApiLink, Badge, Card, DataTable, ErrorBox, Form, Loading, Money, Notice, Page, Tabs, Text, type FieldSpec } from '@events/web-kit/ui';
 import { attributeFields, splitAttributes } from '@/lib/fields';
-import { planField, serviceFields, withPlan, type Package, type RentalItem, type Service, type ServiceType } from '@/lib/service-form';
+import { docLabel, planField, serviceFields, withPlan, type Package, type RentalItem, type Service, type ServiceType } from '@/lib/service-form';
 import { useCurrencyOptions, usePolicyOptions } from '@/lib/options';
 
-type Tab = 'details' | 'media' | 'packages' | 'rental' | 'availability';
+type Tab = 'details' | 'media' | 'packages' | 'rental' | 'availability' | 'documents';
 const CONDITIONS = [
   { value: 'new', label: { ar: 'جديد', en: 'New' } }, { value: 'excellent', label: { ar: 'ممتاز', en: 'Excellent' } },
   { value: 'good', label: { ar: 'جيد', en: 'Good' } }, { value: 'fair', label: { ar: 'مقبول', en: 'Fair' } },
@@ -45,12 +45,14 @@ export default function ServicePage({ params }: { params: Promise<{ id: string }
         ...(type?.allowsPackages !== false ? [{ id: 'packages' as Tab, label: tr({ ar: 'الباقات', en: 'Packages' }) }] : []),
         ...(s.bookingMode === 'quantity_rental' ? [{ id: 'rental' as Tab, label: tr({ ar: 'عناصر التأجير', en: 'Rental items' }) }] : []),
         { id: 'availability', label: tr({ ar: 'أوقات العمل', en: 'Working hours' }) },
+        ...(type?.requiredDocuments?.length ? [{ id: 'documents' as Tab, label: tr({ ar: 'الوثائق المطلوبة', en: 'Required documents' }) }] : []),
       ]} />
       {tab === 'details' && type && <Details s={s} type={type} />}
       {tab === 'media' && <Media s={s} max={type?.maxImages} video={type?.allowsVideo} />}
       {tab === 'packages' && <Packages s={s} units={type?.pricingUnits ?? ['fixed']} />}
       {tab === 'rental' && <Rental s={s} />}
       {tab === 'availability' && <Availability id={id} mode={s.bookingMode} />}
+      {tab === 'documents' && <Documents id={id} />}
     </Page>
   );
 }
@@ -258,6 +260,33 @@ function Availability({ id, mode }: { id: string; mode: string }) {
         <button type="button" className="btn btn-secondary" onClick={() => setRules([...list, { weekday: 4, start: '16:00', end: '23:59' }])}>{tr({ ar: 'إضافة فترة', en: 'Add period' })}</button>
         <button type="button" className="btn btn-primary" disabled={save.isPending} onClick={() => save.mutate(list.map((r) => ({ ...r, start: r.start.slice(0, 5), end: r.end.slice(0, 5) })))}>{tr({ ar: 'حفظ', en: 'Save' })}</button>
       </div>
+    </Card>
+  );
+}
+
+type DocList = { required: string[]; documents: { id: string; docType: string; mimeType: string; createdAt: string }[] };
+
+/** Documents the service type requires (licence, permit...). Private: only you and the reviewing staff can open them. */
+function Documents({ id }: { id: string }) {
+  const tr = useTr();
+  const { data, error, isLoading } = useGet<DocList>(`/v1/provider/services/${id}/documents`);
+  if (isLoading) return <Loading />;
+  if (error || !data) return <ErrorBox error={error} />;
+  return (
+    <Card>
+      <Notice>{tr({ ar: 'يجب رفع كل الوثائق المطلوبة قبل إرسال الخدمة للمراجعة. رفع ملف جديد يستبدل السابق مع الاحتفاظ به في السجل.', en: 'Upload every required document before submitting the service. A new upload replaces the previous one, which is kept on record.' })}</Notice>
+      <DataTable rowKey="docType" rows={data.required.map((t) => ({ docType: t, doc: data.documents.find((d) => d.docType === t) }))} columns={[
+        { key: 'docType', label: { ar: 'الوثيقة', en: 'Document' }, render: (r) => tr(docLabel(r.docType)) },
+        { key: 'status', label: { ar: 'الحالة', en: 'Status' }, render: (r) => r.doc
+          ? <span className="badge badge-ok" data-testid={`doc-${r.docType}`}>{tr({ ar: 'مرفوعة', en: 'Uploaded' })}</span>
+          : <span className="badge badge-warn">{tr({ ar: 'غير مرفوعة', en: 'Missing' })}</span> },
+        { key: 'view', label: '', render: (r) => r.doc ? <ApiLink path={`/v1/service-documents/${r.doc.id}/file`}>{tr({ ar: 'عرض', en: 'View' })}</ApiLink> : null },
+        { key: 'upload', label: '', render: (r) => (
+          <ActionButton label={r.doc ? tr({ ar: 'استبدال', en: 'Replace' }) : tr({ ar: 'رفع', en: 'Upload' })}
+            fields={[{ name: 'file', label: { ar: 'ملف PDF أو صورة', en: 'PDF or image' }, type: 'file', required: true }]}
+            run={(api, v) => { const f = new FormData(); f.append('docType', r.docType); f.append('file', v.file as File); return api.upload(`/v1/provider/services/${id}/documents`, f); }} />
+        ) },
+      ]} />
     </Card>
   );
 }

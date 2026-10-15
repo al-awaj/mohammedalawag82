@@ -95,6 +95,7 @@ const messages: Record<string, Record<Lang, string>> = {
   REASON_REQUIRED: { ar: 'يجب ذكر السبب', en: 'A reason is required' },
   APPLICATION_OPEN_EXISTS: { ar: 'لديك طلب تسجيل قائم بالفعل', en: 'You already have an open application' },
   APPLICATION_INCOMPLETE: { ar: 'الطلب ناقص: يجب إرفاق الوثائق المطلوبة', en: 'Application incomplete: required documents are missing' },
+  SERVICE_DOCUMENTS_REQUIRED: { ar: 'يجب رفع الوثائق المطلوبة لهذا النوع من الخدمات قبل إرسالها للمراجعة', en: 'Upload the documents this service type requires before submitting it' },
   FILE_TYPE_NOT_ALLOWED: { ar: 'نوع الملف غير مسموح', en: 'File type not allowed' },
   FILE_TOO_LARGE: { ar: 'حجم الملف أكبر من المسموح', en: 'File is too large' },
   CURRENCY_NOT_FOUND: { ar: 'العملة غير موجودة أو غير مفعلة', en: 'Currency not found or inactive' },

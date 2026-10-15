@@ -60,6 +60,8 @@ export interface TypeRow {
   min_deposit_percent: string | null;
   provider_can_create: boolean;
   is_active: boolean;
+  required_documents: string[];
+  default_cancellation_policy_id: string | null;
 }
 
 export async function loadType(exec: Executor, id: string): Promise<TypeRow> {

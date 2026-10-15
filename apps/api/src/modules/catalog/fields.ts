@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { i18nTextSchema } from '../common.js';
 
-export const DATA_TYPES = ['text', 'textarea', 'i18n_text', 'number', 'integer', 'boolean', 'select', 'multiselect', 'date', 'url'] as const;
+export const DATA_TYPES = ['text', 'textarea', 'i18n_text', 'number', 'integer', 'boolean', 'select', 'multiselect', 'date', 'url', 'time', 'location'] as const;
 export type DataType = (typeof DATA_TYPES)[number];
 
 export const validationSchema = z.object({
@@ -54,6 +54,10 @@ function valueSchema(f: FieldDef): z.ZodType {
       return z.iso.date();
     case 'url':
       return z.url({ protocol: /^https$/ });
+    case 'time':
+      return z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time as HH:MM');
+    case 'location':
+      return z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }).strict();
   }
 }
 

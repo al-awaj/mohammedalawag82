@@ -47,7 +47,9 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
                 return (
                   <div key={f.key} className="detail-row">
                     <dt>{localized(f.label, lang)}</dt>
-                    <dd>{Array.isArray(v) ? v.map(opt).join('، ') : typeof v === 'boolean' ? (v ? '✓' : '✗') : typeof v === 'object' ? localized(v, lang) : opt(v)}</dd>
+                    <dd>{f.dataType === 'location' && v && typeof v === 'object'
+                      ? <a href={`https://www.google.com/maps/search/?api=1&query=${(v as { lat: number }).lat},${(v as { lng: number }).lng}`} target="_blank" rel="noopener noreferrer">{ar ? 'افتح في الخرائط' : 'Open in maps'}</a>
+                      : Array.isArray(v) ? v.map(opt).join('، ') : typeof v === 'boolean' ? (v ? '✓' : '✗') : typeof v === 'object' ? localized(v, lang) : opt(v)}</dd>
                   </div>
                 );
               })}

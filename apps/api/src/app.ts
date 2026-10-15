@@ -29,6 +29,7 @@ import { settingsRoutes } from './modules/settings/routes.js';
 import { auditRoutes } from './modules/audit/routes.js';
 import { catalogAdminRoutes } from './modules/catalog/admin-routes.js';
 import { catalogProviderRoutes } from './modules/catalog/provider-routes.js';
+import { serviceDocumentRoutes } from './modules/catalog/service-documents.js';
 import { catalogPublicRoutes } from './modules/catalog/public-routes.js';
 import { helpRoutes } from './modules/help/routes.js';
 import { rescheduleRoutes } from './modules/booking/reschedule.js';
@@ -145,6 +146,7 @@ export async function buildApp(config: Config, db: Db) {
     await auditRoutes(v1, deps);
     await catalogAdminRoutes(v1, deps);
     await catalogProviderRoutes(v1, deps);
+    await serviceDocumentRoutes(v1, deps);
     await catalogPublicRoutes(v1, deps);
     await availabilityRoutes(v1, deps);
     await bookingRoutes(v1, deps);

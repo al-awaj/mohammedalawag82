@@ -113,7 +113,7 @@ const rentalCreate = rentalFields.extend({
 
 interface ServiceRow {
   id: string; provider_id: string; service_type_id: string; country_id: string; status: string; base_price: string;
-  attributes: Record<string, unknown>; capacity: number | null; latitude: string | null; deposit_type: string; deposit_value: string; instalment_plan: unknown[] | null;
+  attributes: Record<string, unknown>; capacity: number | null; latitude: string | null; deposit_type: string; deposit_value: string; instalment_plan: unknown[] | null; cancellation_policy_id: string | null;
 }
 
 async function lockOwnService(c: Executor, provider: ProviderRow, id: string): Promise<ServiceRow> {
@@ -166,7 +166,8 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
       `SELECT t.id, t.code, t.name, t.description, t.icon, t.booking_mode AS "bookingMode", t.capacity_mode AS "capacityMode",
               t.default_requires_approval AS "defaultRequiresApproval", t.default_duration_minutes AS "defaultDurationMinutes",
               t.pricing_units AS "pricingUnits", t.allows_packages AS "allowsPackages", t.min_images AS "minImages", t.max_images AS "maxImages",
-              t.allows_video AS "allowsVideo", t.deposit_required AS "depositRequired", t.min_deposit_percent AS "minDepositPercent"
+              t.allows_video AS "allowsVideo", t.deposit_required AS "depositRequired", t.min_deposit_percent AS "minDepositPercent",
+              t.required_documents AS "requiredDocuments"
          FROM provider_service_types g JOIN service_types t ON t.id = g.service_type_id
         WHERE g.provider_id = $1 AND t.is_active AND t.provider_can_create ORDER BY t.code`, [p.id])).rows;
     for (const t of types) {
@@ -221,6 +222,8 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
       assertCapacity(type, b.capacity);
       await assertCurrencyAllowed(c, p.country_id, b.currency);
       await assertPolicyUsable(c, p, b.cancellationPolicyId);
+      // No choice: the type's platform policy applies (clause 19).
+      b.cancellationPolicyId ??= type.default_cancellation_policy_id;
       const deposit = { type: b.depositType, value: b.depositValue };
       assertDepositShape(deposit, b.basePrice);
       assertDepositRules(type, deposit, b.basePrice);
@@ -323,6 +326,13 @@ export async function catalogProviderRoutes(app: App, deps: Deps) {
         if (!items.rowCount) throw badRequest('VALIDATION_FAILED', [{ path: '/rentalItems', message: 'at least one active item with stock is required' }]);
       }
       assertDepositRules(type, { type: s.deposit_type, value: s.deposit_value }, s.base_price);
+      const present = new Set((await c.query<{ doc_type: string }>(
+        'SELECT doc_type FROM service_documents WHERE service_id = $1 AND replaced_at IS NULL', [s.id])).rows.map((r) => r.doc_type));
+      const missing = type.required_documents.filter((d) => !present.has(d));
+      if (missing.length) throw badRequest('SERVICE_DOCUMENTS_REQUIRED', { missingDocuments: missing });
+      if (!s.cancellation_policy_id && type.default_cancellation_policy_id) {
+        await c.query('UPDATE services SET cancellation_policy_id = $2 WHERE id = $1', [s.id, type.default_cancellation_policy_id]);
+      }
 
       const needsReview = await getSetting(c, 'services.require_review', p.country_id);
       const to = needsReview ? 'pending_review' : 'published';

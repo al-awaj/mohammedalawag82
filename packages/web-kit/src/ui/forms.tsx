@@ -10,7 +10,7 @@ export interface Option { value: string; label: L }
 export interface FieldSpec {
   name: string;
   label: L;
-  type?: 'text' | 'textarea' | 'number' | 'decimal' | 'select' | 'multiselect' | 'checkbox' | 'date' | 'datetime' | 'i18n' | 'json' | 'password' | 'email' | 'tel' | 'file' | 'geo';
+  type?: 'text' | 'textarea' | 'number' | 'decimal' | 'select' | 'multiselect' | 'checkbox' | 'date' | 'datetime' | 'i18n' | 'json' | 'password' | 'email' | 'tel' | 'file' | 'geo' | 'time';
   required?: boolean;
   options?: Option[];
   placeholder?: string;
@@ -153,7 +153,7 @@ export function FieldInput({ field, value, onChange, error }: { field: FieldSpec
       break;
     default: {
       const type = field.type === 'decimal' ? 'text' : field.type === 'datetime' ? 'datetime-local' : field.type ?? 'text';
-      const ltr = ['decimal', 'number', 'email', 'tel', 'password', 'date', 'datetime'].includes(field.type ?? '');
+      const ltr = ['decimal', 'number', 'email', 'tel', 'password', 'date', 'datetime', 'time'].includes(field.type ?? '');
       input = <input {...common} type={type} inputMode={field.type === 'decimal' ? 'decimal' : undefined} dir={ltr ? 'ltr' : undefined} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} />;
     }
   }

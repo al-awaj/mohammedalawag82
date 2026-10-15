@@ -80,7 +80,9 @@ export default function ServiceScreen() {
     const opt = (x: unknown) => localized(f.options?.find((o) => o.value === x)?.label ?? { ar: String(x), en: String(x) }, lang);
     if (Array.isArray(v)) return v.map(opt).join('، ');
     if (typeof v === 'boolean') return v ? tr({ ar: 'نعم', en: 'Yes' }) : tr({ ar: 'لا', en: 'No' });
-    return f.options ? opt(v) : String(v);
+    if (f.dataType === 'location' && v && typeof v === 'object') { const g = v as { lat: number; lng: number }; return `${g.lat.toFixed(5)}, ${g.lng.toFixed(5)}`; }
+    if (v && typeof v === 'object') return localized(v as Record<string, string>, lang);
+    return f.options?.length ? opt(v) : String(v);
   };
   const pickDay = (d: string) => {
     setSlot(null);
