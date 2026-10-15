@@ -117,6 +117,12 @@ export const SETTINGS = {
     scopes: ['global', 'country'],
     description: { ar: 'اسم المنصة كما يظهر على الفواتير والإيصالات (يُحفظ في المستند عند إصداره)', en: 'Platform name printed on invoices and receipts (frozen into each document at issue)' },
   }),
+  'security.staff_mfa_required': def({
+    schema: z.boolean(),
+    default: false,
+    scopes: ['global'],
+    description: { ar: 'إلزام الموظفين بالتحقق بخطوتين (رمز من تطبيق المصادقة) عند الدخول', en: 'Require staff to sign in with a second step (authenticator app code)' },
+  }),
   'branding.name': def({
     schema: z.object({ ar: z.string().trim().min(1).max(60), en: z.string().trim().min(1).max(60) }),
     default: { ar: 'مناسبات', en: 'Occasions' },

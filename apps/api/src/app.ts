@@ -22,6 +22,7 @@ import { pendingMigrations } from './db/migrate.js';
 import { TokenService } from './lib/tokens.js';
 import type { Deps } from './deps.js';
 import { authRoutes } from './modules/auth/routes.js';
+import { mfaRoutes } from './modules/auth/mfa.js';
 import { referenceRoutes } from './modules/reference/routes.js';
 import { providerRoutes } from './modules/providers/routes.js';
 import { staffRoutes } from './modules/staff/routes.js';
@@ -44,6 +45,8 @@ import { reportRoutes } from './modules/reports/routes.js';
 import { documentRoutes } from './modules/documents/routes.js';
 import { contractRoutes } from './modules/documents/contracts.js';
 import { closePdf } from './lib/pdf.js';
+import { reportError } from './lib/alerts.js';
+import { accountRoutes } from './modules/auth/account.js';
 import { reconciliationRoutes } from './modules/reconciliation/routes.js';
 
 export async function buildApp(config: Config, db: Db) {
@@ -99,6 +102,7 @@ export async function buildApp(config: Config, db: Db) {
       return reply.status(status).send({ error: { code: (err as { code?: string }).code ?? 'BAD_REQUEST', message: (err as Error).message, details: null } });
     }
     req.log.error(err);
+    reportError('api', err, { route: req.routeOptions?.url, method: req.method, requestId: req.id });
     return reply.status(500).send({ error: { code: 'INTERNAL_ERROR', message: t('INTERNAL_ERROR', lang), details: null } });
   });
 
@@ -141,6 +145,8 @@ export async function buildApp(config: Config, db: Db) {
 
   await app.register(async (v1) => {
     await authRoutes(v1, deps);
+    await mfaRoutes(v1, deps);
+    await accountRoutes(v1, deps);
     await referenceRoutes(v1, deps);
     await providerRoutes(v1, deps);
     await staffRoutes(v1, deps);

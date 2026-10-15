@@ -1,5 +1,5 @@
 'use client';
-import { Bell, Briefcase, CalendarCheck, CalendarDays, ChartColumn, CircleHelp, ClipboardCheck, FileText, HandCoins, LayoutDashboard, MessageSquareWarning, Package, ShieldCheck, Star, TicketPercent } from 'lucide-react';
+import { Bell, KeyRound, Briefcase, CalendarCheck, CalendarDays, ChartColumn, CircleHelp, ClipboardCheck, FileText, HandCoins, LayoutDashboard, MessageSquareWarning, Package, ShieldCheck, Star, TicketPercent } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -46,6 +46,7 @@ export const NAV: NavGroup[] = [
   ] },
   { label: { ar: 'الحساب', en: 'Account' }, items: [
     { href: '/profile', label: { ar: 'الملف التجاري', en: 'Business profile' }, icon: Briefcase },
+    { href: '/security', label: { ar: 'أمان الحساب', en: 'Account security' }, icon: KeyRound },
     { href: '/onboarding', label: { ar: 'طلب التسجيل', en: 'Application' }, icon: ClipboardCheck },
   ] },
 ];

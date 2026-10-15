@@ -24,6 +24,8 @@ const promoBody = z.object({
   usageLimitTotal: z.number().int().positive().nullable().default(null),
   usageLimitPerCustomer: z.number().int().positive().nullable().default(null),
   countryId: z.uuid().nullable().default(null),
+  /** Several countries at once (instead of countryId); empty or null = not used. */
+  countryIds: z.array(z.uuid()).min(2).max(50).nullable().default(null),
   serviceTypeIds: z.array(z.uuid()).max(100).nullable().default(null),
   serviceIds: z.array(z.uuid()).max(500).nullable().default(null),
   costBearer: z.enum(['platform', 'provider', 'shared']),
@@ -32,7 +34,7 @@ const promoBody = z.object({
 
 const COLUMNS = `p.id, p.code, p.name, p.terms, p.discount_type AS "discountType", p.discount_value AS "discountValue", p.currency_code AS currency,
   p.max_discount AS "maxDiscount", p.min_booking_total AS "minBookingTotal", p.starts_at AS "startsAt", p.ends_at AS "endsAt",
-  p.usage_limit_total AS "usageLimitTotal", p.usage_limit_per_customer AS "usageLimitPerCustomer", p.country_id AS "countryId",
+  p.usage_limit_total AS "usageLimitTotal", p.usage_limit_per_customer AS "usageLimitPerCustomer", p.country_id AS "countryId", p.country_ids AS "countryIds",
   p.service_type_ids AS "serviceTypeIds", p.service_ids AS "serviceIds", p.provider_id AS "providerId", p.cost_bearer AS "costBearer",
   p.provider_share_percent AS "providerSharePercent", p.is_active AS "isActive", p.created_at AS "createdAt",
   (SELECT count(DISTINCT r.order_id)::int FROM promotion_redemptions r WHERE r.promotion_id = p.id AND r.status = 'active') AS "timesUsed",
@@ -42,11 +44,11 @@ async function insertPromotion(c: Executor, b: z.infer<typeof promoBody>, create
   try {
     return (await c.query<{ id: string }>(
       `INSERT INTO promotions (code, name, terms, discount_type, discount_value, currency_code, max_discount, min_booking_total, starts_at, ends_at,
-         usage_limit_total, usage_limit_per_customer, country_id, service_type_ids, service_ids, provider_id, cost_bearer, provider_share_percent, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
+         usage_limit_total, usage_limit_per_customer, country_id, service_type_ids, service_ids, provider_id, cost_bearer, provider_share_percent, created_by, country_ids)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING id`,
       [b.code, JSON.stringify(b.name), b.terms ? JSON.stringify(b.terms) : null, b.discountType, b.discountValue, b.currency, b.maxDiscount, b.minBookingTotal,
         b.startsAt, b.endsAt, b.usageLimitTotal, b.usageLimitPerCustomer, b.countryId, b.serviceTypeIds, b.serviceIds, providerId, b.costBearer,
-        b.providerSharePercent, createdBy])).rows[0]!.id;
+        b.providerSharePercent, createdBy, b.countryIds?.length ? [...new Set(b.countryIds)] : null])).rows[0]!.id;
   } catch (err) {
     if ((err as { code?: string }).code === '23514') {
       throw badRequest('VALIDATION_FAILED', [{ path: '/', message: 'ends after it starts; percent <= 100; currency only and always for fixed; share percent only and always for shared cost' }]);
@@ -63,11 +65,13 @@ export async function promotionRoutes(app: App, deps: Deps) {
   // ---------------- Admin (platform / shared / provider-borne for any provider) ----------------
   app.get('/admin/promotions', { ...staff, schema: { tags: ['admin:promotions'], security: sec } }, async (req) => {
     const scope = countryScope(requireUser(req), 'promotions.manage');
-    return (await db.query(`SELECT ${COLUMNS} FROM promotions p WHERE ($1::uuid[] IS NULL OR p.country_id = ANY($1)) ORDER BY p.created_at DESC`, [scope])).rows;
+    return (await db.query(`SELECT ${COLUMNS} FROM promotions p WHERE ($1::uuid[] IS NULL OR p.country_id = ANY($1) OR p.country_ids && $1) ORDER BY p.created_at DESC`, [scope])).rows;
   });
 
   app.post('/admin/promotions', { ...staff, schema: { tags: ['admin:promotions'], security: sec, body: promoBody } }, async (req, reply) => {
-    assertCan(requireUser(req), 'promotions.manage', req.body.countryId);
+    if (req.body.countryIds?.length && req.body.countryId) throw badRequest('VALIDATION_FAILED', [{ path: '/countryIds', message: 'give countryId or countryIds, not both' }]);
+    // A multi-country promotion needs the permission in every one of its countries.
+    for (const cid of req.body.countryIds?.length ? req.body.countryIds : [req.body.countryId]) assertCan(requireUser(req), 'promotions.manage', cid);
     const id = await withTx(db, async (c) => {
       const pid = await insertPromotion(c, req.body, requireUser(req).id, null);
       await audit(c, actorOf(req), { action: 'promotion.created', entityType: 'promotion', entityId: pid, after: req.body });
@@ -80,9 +84,9 @@ export async function promotionRoutes(app: App, deps: Deps) {
     ...staff,
     schema: { tags: ['admin:promotions'], security: sec, params: idParams, body: z.object({ isActive: z.boolean().optional(), endsAt: z.iso.datetime({ offset: true }).optional(), usageLimitTotal: z.number().int().positive().nullable().optional(), reason: reasonSchema }) },
   }, async (req) => withTx(db, async (c) => {
-    const before = (await c.query<{ country_id: string | null }>('SELECT * FROM promotions WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    const before = (await c.query<{ country_id: string | null; country_ids: string[] | null }>('SELECT * FROM promotions WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
     if (!before) throw notFound();
-    assertCan(requireUser(req), 'promotions.manage', before.country_id);
+    for (const cid of before.country_ids?.length ? before.country_ids : [before.country_id]) assertCan(requireUser(req), 'promotions.manage', cid);
     // Discount terms stay as created so past redemptions remain explainable; only availability changes.
     await c.query(`UPDATE promotions SET is_active = coalesce($2, is_active), ends_at = coalesce($3, ends_at),
                      usage_limit_total = CASE WHEN $4 THEN $5::int ELSE usage_limit_total END WHERE id = $1`,

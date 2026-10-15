@@ -35,7 +35,10 @@ export async function authRoutes(app: App, deps: Deps) {
 
   app.post('/auth/login', {
     ...strict,
-    schema: { tags: ['auth'], body: z.object({ identifier: identifierSchema, password: z.string().min(1).max(128) }), response: { 200: sessionSchema } },
+    schema: {
+      tags: ['auth'], body: z.object({ identifier: identifierSchema, password: z.string().min(1).max(128) }),
+      response: { 200: z.union([sessionSchema, z.object({ mfaRequired: z.literal(true).optional(), mfaSetupRequired: z.literal(true).optional(), mfaToken: z.string() })]) },
+    },
   }, async (req) => svc.login(req.body.identifier, req.body.password, actorOf(req)));
 
   app.post('/auth/refresh', {

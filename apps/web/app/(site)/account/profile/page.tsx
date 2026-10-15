@@ -1,6 +1,6 @@
 'use client';
 import { useAction, useApp, useGet, useSession, useTr } from '@events/web-kit/client';
-import { ApiLink, Badge, Card, DataTable, DateTime, ErrorBox, Form, Money, Notice, Page } from '@events/web-kit/ui';
+import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, ErrorBox, Form, Money, Notice, Page } from '@events/web-kit/ui';
 
 type History = { payments: { number: string; method: string; status: string; amount: string; verifiedAmount: string | null; currency: string; createdAt: string; bookings: string[] | null }[] };
 
@@ -40,6 +40,17 @@ export default function Profile() {
           { key: 'status', label: { ar: 'الحالة', en: 'Status' }, render: (p) => <Badge group="payment" value={p.status} /> },
           { key: 'createdAt', label: { ar: 'التاريخ', en: 'Date' }, render: (p) => <DateTime value={p.createdAt} /> },
         ]} />
+      </Card>
+      <Card title={tr({ ar: 'بياناتي الشخصية', en: 'My personal data' })}>
+        <p className="muted">{tr({ ar: 'حمّل نسخة من بياناتك (الحساب والحجوزات والمدفوعات والمناسبات والتقييمات والنزاعات) بصيغة JSON.', en: 'Download a copy of your data (account, bookings, payments, events, reviews and disputes) as JSON.' })}</p>
+        <a className="btn btn-secondary" href="/bff/v1/me/export" download="my-data.json" data-testid="export-data">{tr({ ar: 'تحميل بياناتي', en: 'Download my data' })}</a>
+        <hr />
+        <p className="muted">{tr({ ar: 'حذف الحساب نهائي: يُزال اسمك وجوالك وبريدك ولا يمكنك الدخول مجددًا. تبقى سجلات الحجوزات والمدفوعات المالية محفوظة كما يقتضي النظام دون بياناتك الشخصية. يجب أولًا إنهاء الحجوزات القائمة والنزاعات والمبالغ المعلقة.', en: 'Deleting the account is final: your name, phone and email are removed and you can no longer sign in. Booking and payment records are kept as the law requires, without your personal details. Open bookings, disputes and pending amounts must be settled first.' })}</p>
+        <ActionButton variant="danger" label={tr({ ar: 'حذف حسابي', en: 'Delete my account' })}
+          note={tr({ ar: 'لا يمكن التراجع عن هذه الخطوة.', en: 'This cannot be undone.' })}
+          fields={[{ name: 'password', label: { ar: 'كلمة المرور للتأكيد', en: 'Password to confirm' }, type: 'password', required: true }]}
+          run={(api, v) => api.post('/v1/me/delete', { password: v.password, confirm: true })}
+          onDone={() => { void fetch('/bff/session/logout', { method: 'POST', headers: { 'x-csrf': '1' } }).finally(() => { window.location.href = '/'; }); }} />
       </Card>
     </Page>
   );

@@ -5,6 +5,7 @@ import { expireRescheduleRequests } from './modules/booking/reschedule.js';
 import { expireBookings, warnExpiringHolds } from './modules/booking/service.js';
 import { deliverOutbox } from './modules/notifications/delivery.js';
 import { sendReminders } from './modules/notifications/reminders.js';
+import { reportError } from './lib/alerts.js';
 
 /**
  * Scheduled jobs (clause 73). Run as its own process: `npm run worker`.
@@ -21,6 +22,12 @@ const jobs: { name: string; everyMs: number; run: () => Promise<number> }[] = [
   { name: 'warn-expiring-holds', everyMs: 60_000, run: () => warnExpiringHolds(db) },
   { name: 'send-reminders', everyMs: 15 * 60_000, run: () => sendReminders(db) },
   { name: 'deliver-notifications', everyMs: 5_000, run: () => deliverOutbox(db) },
+  // Liveness for the admin system status page.
+  { name: 'heartbeat', everyMs: 60_000, run: async () => {
+    await db.query(`INSERT INTO system_heartbeats (name, beat_at, info) VALUES ('worker', now(), $1)
+                    ON CONFLICT (name) DO UPDATE SET beat_at = now(), info = EXCLUDED.info`, [JSON.stringify({ pid: process.pid, jobs: jobs.length })]);
+    return 0;
+  } },
 ];
 
 async function tick(job: (typeof jobs)[number]) {
@@ -36,6 +43,7 @@ async function tick(job: (typeof jobs)[number]) {
     }
   } catch (err) {
     console.error(JSON.stringify({ job: job.name, error: (err as Error).message }));
+    reportError(`worker:${job.name}`, err);
   } finally {
     client.release();
   }

@@ -199,18 +199,42 @@ export async function staffRoutes(app: App, deps: Deps) {
 
   app.patch('/admin/staff/:id', {
     ...auth, preValidation: requirePermission('users.manage'),
-    schema: { tags: ['admin:access'], security: sec, params: idParams, body: z.object({ fullName: z.string().trim().min(2).max(200).optional(), jobTitle: z.string().max(100).optional(), preferredLanguage: langSchema.optional() }) },
+    schema: { tags: ['admin:access'], security: sec, params: idParams, body: z.object({ fullName: z.string().trim().min(2).max(200).optional(), jobTitle: z.string().max(100).optional(), preferredLanguage: langSchema.optional(), email: z.email().max(200).optional() }) },
   }, async (req) => {
     if (!can(requireUser(req), 'users.manage')) throw forbidden();
     return withTx(db, async (c) => {
-      const before = (await c.query(`SELECT u.full_name, u.preferred_language, s.job_title FROM users u JOIN staff_profiles s ON s.user_id = u.id WHERE u.id = $1 FOR UPDATE OF u`, [req.params.id])).rows[0];
+      const before = (await c.query(`SELECT u.full_name, u.preferred_language, u.email, s.job_title FROM users u JOIN staff_profiles s ON s.user_id = u.id WHERE u.id = $1 FOR UPDATE OF u`, [req.params.id])).rows[0];
       if (!before) throw notFound();
+      if (req.body.email && req.body.email.toLowerCase() !== before.email) {
+        try {
+          await c.query('UPDATE users SET email = $2, email_verified_at = NULL WHERE id = $1', [req.params.id, req.body.email.toLowerCase()]);
+        } catch (err) { mapUniqueViolation(err, { users_email: 'EMAIL_TAKEN' }); }
+      }
       await c.query('UPDATE users SET full_name = coalesce($2, full_name), preferred_language = coalesce($3, preferred_language) WHERE id = $1',
         [req.params.id, req.body.fullName ?? null, req.body.preferredLanguage ?? null]);
       if (req.body.jobTitle !== undefined) await c.query('UPDATE staff_profiles SET job_title = $2 WHERE user_id = $1', [req.params.id, req.body.jobTitle]);
       await audit(c, actorOf(req), { action: 'staff.updated', entityType: 'user', entityId: req.params.id, before, after: req.body });
       return { id: req.params.id };
     });
+  });
+
+  /** Sets a temporary password for a staff member (e.g. a forgotten one); their sessions end and the change is audited. */
+  app.post('/admin/staff/:id/password', {
+    ...auth, preValidation: requirePermission('users.manage'),
+    schema: { tags: ['admin:access'], security: sec, params: idParams, body: z.object({ newPassword: passwordSchema, reason: reasonSchema }) },
+  }, async (req, reply) => {
+    const actor = requireUser(req);
+    if (!can(actor, 'users.manage')) throw forbidden();
+    if (actor.id === req.params.id) throw badRequest('VALIDATION_FAILED', [{ path: '/id', message: 'change your own password from your account' }]);
+    await withTx(db, async (c) => {
+      const staff = (await c.query(`SELECT 1 FROM users WHERE id = $1 AND kind = 'staff' FOR UPDATE`, [req.params.id])).rowCount;
+      if (!staff) throw notFound();
+      await c.query(`INSERT INTO user_credentials (user_id, password_hash) VALUES ($1, $2)
+                     ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, password_changed_at = now()`, [req.params.id, await hashPassword(req.body.newPassword)]);
+      await c.query('UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [req.params.id]);
+      await audit(c, actorOf(req), { action: 'staff.password_set', entityType: 'user', entityId: req.params.id, reason: req.body.reason });
+    });
+    return reply.status(204).send();
   });
 
   app.put('/admin/staff/:id/roles', {

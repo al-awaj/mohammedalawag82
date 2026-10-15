@@ -4,8 +4,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Languages, LogOut, Menu, Sparkles } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useApp, useSession, useT, type SessionUser } from '../client';
-import { Button, ErrorBox, Loading } from './basics';
+import { useApp, useSession, useT, useTr, type SessionUser } from '../client';
+import { Button, ErrorBox, Loading, Notice } from './basics';
 import { Form, type FieldSpec } from './forms';
 
 type L = { ar: string; en: string };
@@ -81,6 +81,24 @@ export function Shell({ brand, nav, kinds, children, footer }: { brand: ReactNod
   );
 }
 
+/** Second sign-in step: the 6-digit code from an authenticator app, with first-time setup when required. */
+function MfaStep({ mfa, busy, onCode }: { mfa: { setup: { secret: string; otpauthUrl: string } | null }; busy: boolean; onCode: (code: string) => void }) {
+  const tr = useTr();
+  return (
+    <>
+      {mfa.setup ? (
+        <Notice kind="warning">
+          {tr({ ar: 'التحقق بخطوتين مطلوب لحسابك. أضف الحساب في تطبيق مصادقة (Google Authenticator أو Microsoft Authenticator) بالمفتاح التالي، ثم أدخل الرمز الظاهر.', en: 'Two-step sign-in is required for your account. Add it to an authenticator app (Google or Microsoft Authenticator) with this key, then enter the code shown.' })}
+          <div className="mono" dir="ltr" data-testid="mfa-secret" style={{ marginTop: 8, wordBreak: 'break-all' }}>{mfa.setup.secret}</div>
+          <a href={mfa.setup.otpauthUrl}>{tr({ ar: 'فتح في تطبيق المصادقة (على الجوال)', en: 'Open in the authenticator app (on a phone)' })}</a>
+        </Notice>
+      ) : <p className="muted">{tr({ ar: 'أدخل الرمز المكوّن من 6 أرقام من تطبيق المصادقة.', en: 'Enter the 6-digit code from your authenticator app.' })}</p>}
+      <Form busy={busy} submitLabel={tr({ ar: 'تحقق', en: 'Verify' })} onSubmit={(v) => onCode(String(v.code))}
+        fields={[{ name: 'code', label: { ar: 'رمز التحقق', en: 'Verification code' }, required: true, placeholder: '123456' }]} />
+    </>
+  );
+}
+
 export function LoginPanel({ title, home = '/', extra }: { title: ReactNode; home?: string; extra?: ReactNode }) {
   const { api } = useApp();
   const t = useT();
@@ -88,6 +106,12 @@ export function LoginPanel({ title, home = '/', extra }: { title: ReactNode; hom
   const router = useRouter();
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const [mfa, setMfa] = useState<{ token: string; setup: { secret: string; otpauthUrl: string } | null } | null>(null);
+  const done = async () => {
+    await qc.invalidateQueries({ queryKey: ['session'] });
+    const next = new URLSearchParams(window.location.search).get('next');
+    router.replace(next && next.startsWith('/') && !next.startsWith('//') ? next : home);
+  };
   const fields: FieldSpec[] = [
     { name: 'identifier', label: { ar: 'البريد الإلكتروني أو رقم الجوال', en: 'Email or mobile number' }, type: 'text', required: true },
     { name: 'password', label: { ar: 'كلمة المرور', en: 'Password' }, type: 'password', required: true },
@@ -98,15 +122,22 @@ export function LoginPanel({ title, home = '/', extra }: { title: ReactNode; hom
         <div className="row between"><span className="brand-mark"><Sparkles className="ico" aria-hidden /></span><LangSwitch /></div>
         <h1>{title}</h1>
         <ErrorBox error={error} />
+        {mfa ? <MfaStep mfa={mfa} busy={busy} onCode={async (code) => {
+          setBusy(true); setError(null);
+          try { await api.post('/session/mfa', { mfaToken: mfa.token, code }); await done(); } catch (e) { setError(e); } finally { setBusy(false); }
+        }} /> : (
         <Form fields={fields} busy={busy} submitLabel={t('login')} onSubmit={async (v) => {
           setBusy(true); setError(null);
           try {
-            await api.post('/session/login', v);
-            await qc.invalidateQueries({ queryKey: ['session'] });
-            const next = new URLSearchParams(window.location.search).get('next');
-            router.replace(next && next.startsWith('/') && !next.startsWith('//') ? next : home);
+            const r = await api.post<{ mfaToken?: string; mfaSetupRequired?: boolean }>('/session/login', v);
+            if (r?.mfaToken) {
+              const setup = r.mfaSetupRequired ? await api.post<{ secret: string; otpauthUrl: string }>('/session/mfa-setup', { mfaToken: r.mfaToken }) : null;
+              setMfa({ token: r.mfaToken, setup });
+              return;
+            }
+            await done();
           } catch (e) { setError(e); } finally { setBusy(false); }
-        }} />
+        }} />)}
         {extra}
       </div>
     </div>

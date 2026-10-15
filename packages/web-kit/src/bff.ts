@@ -141,7 +141,19 @@ export function createBff(opts: BffOptions) {
     if (action === 'login' && req.method === 'POST') {
       const r = await api('/v1/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', ...forwarded(req) }, body: await req.text() });
       if (!r.ok) return new Response(await r.text(), { status: r.status, headers: { 'content-type': 'application/json' } });
+      const body = (await r.json()) as Tokens & { mfaToken?: string };
+      // Second step pending: no session yet; the page asks for the authenticator code.
+      if (body.mfaToken) return json(200, body);
+      return startSession(body, req);
+    }
+    if (action === 'mfa' && req.method === 'POST') {
+      const r = await api('/v1/auth/mfa/verify', { method: 'POST', headers: { 'content-type': 'application/json', ...forwarded(req) }, body: await req.text() });
+      if (!r.ok) return new Response(await r.text(), { status: r.status, headers: { 'content-type': 'application/json' } });
       return startSession((await r.json()) as Tokens, req);
+    }
+    if (action === 'mfa-setup' && req.method === 'POST') {
+      const r = await api('/v1/auth/mfa/setup', { method: 'POST', headers: { 'content-type': 'application/json', ...forwarded(req) }, body: await req.text() });
+      return new Response(await r.text(), { status: r.status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
     }
     if (action === 'register' && req.method === 'POST' && opts.allowRegister) {
       const body = JSON.parse((await req.text()) || '{}') as Record<string, unknown>;
