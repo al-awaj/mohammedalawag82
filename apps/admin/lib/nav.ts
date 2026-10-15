@@ -1,4 +1,4 @@
-import { Ban, Banknote, Bell, CalendarCheck, CalendarDays, ChartColumn, CircleHelp, ClipboardCheck, CreditCard, FileText, FolderTree, Globe, HandCoins, History, IdCard, Landmark, LayoutDashboard, MessageSquareWarning, Package, PartyPopper, Percent, Scale, Settings, Settings2, ShieldCheck, Star, Store, TicketPercent, Undo2, UserPen, Users } from 'lucide-react';
+import { Ban, FileSignature, Banknote, Bell, CalendarCheck, CalendarDays, ChartColumn, CircleHelp, ClipboardCheck, CreditCard, FileText, FolderTree, Globe, HandCoins, History, IdCard, Landmark, LayoutDashboard, MessageSquareWarning, Package, PartyPopper, Percent, Scale, Settings, Settings2, ShieldCheck, Star, Store, TicketPercent, Undo2, UserPen, Users } from 'lucide-react';
 import type { NavGroup } from '@events/web-kit/ui';
 
 /** Navigation; items are shown only to staff holding the permission (the API enforces it regardless). */
@@ -43,6 +43,7 @@ export const NAV: NavGroup[] = [
     { href: '/staff', label: { ar: 'الموظفون والأدوار', en: 'Staff & roles' }, perm: ['users.view', 'roles.view'], icon: IdCard },
     { href: '/reference', label: { ar: 'الدول والعملات والشروط', en: 'Countries, currencies, terms' }, perm: ['countries.manage', 'currencies.manage', 'exchange_rates.manage', 'terms.manage'], icon: Globe },
     { href: '/help', label: { ar: 'المساعدة والأسئلة الشائعة', en: 'Help & FAQ' }, perm: 'content.manage', icon: CircleHelp },
+    { href: '/contracts', label: { ar: 'قالب عقد الحجز', en: 'Booking contract' }, perm: 'content.manage', icon: FileSignature },
     { href: '/settings', label: { ar: 'الإعدادات', en: 'Settings' }, perm: 'settings.view', icon: Settings },
     { href: '/audit', label: { ar: 'سجل التدقيق', en: 'Audit log' }, perm: 'audit.view', icon: History },
   ] },

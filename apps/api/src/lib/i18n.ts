@@ -70,6 +70,7 @@ const messages: Record<string, Record<Lang, string>> = {
   PAYMENT_METHOD_NOT_AVAILABLE: { ar: 'طريقة الدفع غير متاحة لهذه الحجوزات', en: 'This payment method is not available for these bookings' },
   PAYMENT_IN_PROGRESS: { ar: 'توجد عملية دفع قيد التنفيذ لهذا الحجز', en: 'A payment for this booking is already in progress' },
   NOTHING_TO_PAY: { ar: 'لا يوجد مبلغ مستحق للدفع الآن', en: 'Nothing is due for payment right now' },
+  PDF_NOT_AVAILABLE: { ar: 'إنشاء ملفات PDF غير مفعّل على الخادم؛ استخدم نسخة الطباعة أو ثبّت متصفح Chromium أو Edge وحدد مساره في PDF_BROWSER_PATH', en: 'PDF output is not enabled on this server; use the print view, or install Chromium or Edge and set PDF_BROWSER_PATH' },
   PAYMENT_AMOUNT_INVALID: { ar: 'المبلغ غير صالح: يجب أن يكون موجبًا ولا يتجاوز المتبقي', en: 'Invalid amount: it must be positive and not exceed the remaining balance' },
   PAYMENT_AMOUNT_TOO_SMALL: { ar: 'المبلغ أقل من الحد الأدنى المسموح للدفعة الجزئية', en: 'The amount is below the minimum allowed for a partial payment' },
   PROOF_REQUIRED: { ar: 'يجب إرفاق إثبات الدفع', en: 'A proof of payment is required' },

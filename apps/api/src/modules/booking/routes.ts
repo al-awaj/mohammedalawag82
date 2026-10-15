@@ -50,7 +50,7 @@ function bookingSelect(audience: 'customer' | 'provider' | 'staff') {
       b.start_at AS "startAt", b.end_at AS "endAt", b.units, b.guests, b.pricing_unit AS "pricingUnit", b.unit_price AS "unitPrice",
       b.quantity_factor AS "quantityFactor", b.add_ons AS "addOns", b.subtotal, b.total, b.currency_code AS currency,
       b.deposit_type AS "depositType", b.deposit_value AS "depositValue", b.upfront_amount AS "upfrontAmount", b.balance_due_at AS "balanceDueAt",
-      b.instalment_plan AS "instalmentPlan", b.security_deposit_amount AS "securityDepositAmount", b.cancellation_policy AS "cancellationPolicy", b.terms_snapshot AS "termsSnapshot",
+      b.instalment_plan AS "instalmentPlan", EXISTS (SELECT 1 FROM booking_contracts bc WHERE bc.booking_id = b.id) AS "hasContract", b.security_deposit_amount AS "securityDepositAmount", b.cancellation_policy AS "cancellationPolicy", b.terms_snapshot AS "termsSnapshot",
       b.requires_provider_approval AS "requiresProviderApproval", b.hold_expires_at AS "holdExpiresAt", b.approval_deadline AS "approvalDeadline",
       b.discount_amount AS "discountAmount", b.discount_platform_borne AS "discountPlatformBorne", b.discount_provider_borne AS "discountProviderBorne",
       b.decision_reason AS "decisionReason", b.customer_notes AS "customerNotes", b.created_at AS "createdAt",

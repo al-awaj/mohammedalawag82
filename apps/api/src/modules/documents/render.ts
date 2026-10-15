@@ -2,6 +2,8 @@
  * Printable HTML for documents and statements (clause 65): bilingual, right-to-left for Arabic and
  * left-to-right for English, rendered only from the frozen document data (or the statement payload).
  */
+import { embeddedFontCss } from '../../lib/pdf.js';
+
 type Lang = 'ar' | 'en';
 
 const L: Record<string, { ar: string; en: string }> = {
@@ -112,7 +114,7 @@ export function renderHtml(doc: { kind: string; number?: string | null; issuedAt
   const issuer = d.issuer && typeof d.issuer === 'object' ? Object.values(d.issuer).map((v) => loc(v, lang)).filter(Boolean) : [];
   const dir = lang === 'ar' ? 'rtl' : 'ltr';
   return `<!doctype html><html lang="${lang}" dir="${dir}"><head><meta charset="utf-8"><title>${esc(t(doc.kind, lang))} ${esc(doc.number ?? '')}</title>
-<style>body{font-family:system-ui,'Noto Naskh Arabic',sans-serif;margin:24px;color:#111}h1{font-size:20px;margin:0 0 4px}
+<style>${embeddedFontCss()}body{font-family:'Plex Arabic',system-ui,'Noto Naskh Arabic',sans-serif;margin:24px;color:#111}h1{font-size:20px;margin:0 0 4px}
 table{border-collapse:collapse;width:100%;margin:12px 0}th,td{border:1px solid #ccc;padding:6px;text-align:start}
 .meta th,.totals th{width:35%;background:#f5f5f5}.note{color:#555;font-size:12px}@media print{body{margin:0}}</style></head>
 <body><header><div>${esc(loc(d.platformName, lang))}</div>${issuer.map((x) => `<div class="note">${esc(x)}</div>`).join('')}

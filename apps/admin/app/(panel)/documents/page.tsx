@@ -26,7 +26,8 @@ export default function Documents() {
           { key: 'print', label: '', render: (d) => (
             <span className="row gap">
               <a href={`/bff/v1/documents/${d.id}?format=html&lang=ar`} target="_blank" rel="noopener noreferrer">عربي</a>
-              <a href={`/bff/v1/documents/${d.id}?format=html&lang=en`} target="_blank" rel="noopener noreferrer">English</a>
+              <a href={`/bff/v1/documents/${d.id}?format=html&lang=en`} target="_blank" rel="noopener noreferrer">English</a>{' · '}
+              <a href={`/bff/v1/documents/${d.id}?format=pdf&lang=ar`} target="_blank" rel="noopener noreferrer">PDF</a>
             </span>
           ) },
         ]}

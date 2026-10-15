@@ -42,6 +42,8 @@ import { promotionRoutes } from './modules/promotions/routes.js';
 import { reviewRoutes } from './modules/reviews/routes.js';
 import { reportRoutes } from './modules/reports/routes.js';
 import { documentRoutes } from './modules/documents/routes.js';
+import { contractRoutes } from './modules/documents/contracts.js';
+import { closePdf } from './lib/pdf.js';
 import { reconciliationRoutes } from './modules/reconciliation/routes.js';
 
 export async function buildApp(config: Config, db: Db) {
@@ -157,10 +159,12 @@ export async function buildApp(config: Config, db: Db) {
     await reviewRoutes(v1, deps);
     await reportRoutes(v1, deps);
     await documentRoutes(v1, deps);
+    await contractRoutes(v1, deps);
     await reconciliationRoutes(v1, deps);
     await helpRoutes(v1, deps);
     await rescheduleRoutes(v1, deps);
   }, { prefix: '/v1' });
 
+  app.addHook('onClose', async () => { await closePdf(); });
   return app;
 }

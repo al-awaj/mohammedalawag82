@@ -39,6 +39,8 @@ cp secrets.env.example secrets.env && chmod 600 secrets.env
 
 ضع في `secrets.env` أسرار التكاملات، متغيرًا لكل تكامل باسم الـ `secretRef` الذي يُدخل في لوحة الإدارة (مثال: `PAY_MOYASAR_SA_SECRET=…`). المنصة لا تخزن هذه الأسرار في قاعدة البيانات ولا تعرضها.
 
+- ملفات PDF (الفواتير والإيصالات والكشوف وعقد الحجز): تُطبع على الخادم بمتصفح Chromium (مضمّن في صورة Docker افتراضيًا؛ `--build-arg WITH_PDF=false` لاستبعاده). خارج Docker يُكتشف تلقائيًا Edge أو Chrome أو Chromium، أو حدد المسار في `PDF_BROWSER_PATH`. بدون متصفح تبقى نسخ الطباعة (HTML) متاحة ويعيد طلب PDF رسالة واضحة.
+
 ## 4. التشغيل
 
 ```bash

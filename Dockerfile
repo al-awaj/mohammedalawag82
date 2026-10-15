@@ -38,6 +38,9 @@ RUN --mount=type=secret,id=ca,required=false --mount=type=cache,target=/root/.np
 # backup/restore) without any package repository at build time; Node comes from the Node image (both
 # are Debian, and Node runs on the same or newer glibc).
 FROM ${PG_IMAGE} AS api
+# Chromium prints documents and contracts to PDF (pass --build-arg WITH_PDF=false to leave it out; the print views still work).
+ARG WITH_PDF=true
+RUN if [ "$WITH_PDF" = "true" ]; then apt-get update && apt-get install -y --no-install-recommends chromium && rm -rf /var/lib/apt/lists/*; fi
 COPY --from=manifests /usr/local/bin/node /usr/local/bin/node
 RUN useradd --system --uid 10001 --create-home app && node --version >/dev/null && pg_dump --version >/dev/null
 ENTRYPOINT []

@@ -8,6 +8,7 @@ import { confirmHold, releaseBlock, reserve } from '../availability/engine.js';
 import { currentTerms } from '../auth/service.js';
 import { getSetting } from '../settings/registry.js';
 import { quote, type ItemInput, type Quote } from './pricing.js';
+import { attachContract } from '../documents/contracts.js';
 import { computeCommission } from '../finance/commission.js';
 import { evaluateCoupon } from '../promotions/service.js';
 import { onBookingCompleted } from '../finance/earnings.js';
@@ -295,6 +296,7 @@ export async function checkout(db: Db, customerId: string, opts: { itemIds?: str
         }
         await c.query(`INSERT INTO booking_status_events (booking_id, from_status, to_status, actor_id, actor_kind) VALUES ($1, NULL, $2, $3, 'customer')`,
           [b.id, status, customerId]);
+        await attachContract(c, b.id, countryId);
         // Commission rule and amount are fixed at booking time; later rule changes never touch it (clause 40).
         // Base = price minus what the provider gives up; a platform-borne discount does not cut the provider's commission base.
         const commissionBase = fromUnits(toUnits(q.total) + toUnits(q.discountPlatformBorne));

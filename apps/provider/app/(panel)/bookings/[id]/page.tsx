@@ -6,7 +6,7 @@ import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, disput
 interface Booking {
   id: string; number: string; status: string; serviceTitle: Record<string, string>; packageName: Record<string, string> | null; startAt: string; endAt: string; units: number; guests: number | null;
   unitPrice: string; quantityFactor: string; pricingUnit: string; addOns: { code: string; name: Record<string, string>; price: string }[]; subtotal: string; total: string; currency: string;
-  upfrontAmount: string; instalmentPlan: Instalment[] | null; balanceDueAt: string | null; discountAmount: string; discountProviderBorne: string; requiresProviderApproval: boolean; approvalDeadline: string | null;
+  upfrontAmount: string; instalmentPlan: Instalment[] | null; hasContract: boolean; balanceDueAt: string | null; discountAmount: string; discountProviderBorne: string; requiresProviderApproval: boolean; approvalDeadline: string | null;
   decisionReason: string | null; customerNotes: string | null; paidAmount: string; remainingAmount: string; customerName: string; customerPhone: string | null;
   history: { from: string | null; to: string; actorKind: string; reason: string | null; at: string }[];
 }
@@ -21,6 +21,9 @@ export default function BookingPage({ params }: { params: Promise<{ id: string }
   return (
     <Page title={`${tr({ ar: 'حجز', en: 'Booking' })} ${b.number}`} actions={<>
       <ApiLink path={`/v1/bookings/${id}/statement?format=html&lang=ar`}>{tr({ ar: 'كشف الحجز', en: 'Statement' })}</ApiLink>
+      <ApiLink path={`/v1/bookings/${id}/statement?format=pdf&lang=ar`}>PDF</ApiLink>
+      {b.hasContract && <ApiLink path={`/v1/bookings/${id}/contract?format=html&lang=ar`}>{tr({ ar: 'عقد الحجز', en: 'Booking contract' })}</ApiLink>}
+      {b.hasContract && <ApiLink path={`/v1/bookings/${id}/contract?format=pdf&lang=ar`}>{tr({ ar: 'العقد PDF', en: 'Contract PDF' })}</ApiLink>}
       {b.status === 'pending_provider_approval' && <>
         <ActionButton variant="primary" label={tr({ ar: 'قبول', en: 'Accept' })} note={tr({ ar: 'بعد القبول يُطلب من العميل الدفع ضمن المهلة المحددة.', en: 'After accepting, the customer is asked to pay within the payment window.' })} run={(api) => api.post(`/v1/provider/bookings/${id}/accept`)} />
         <ActionButton variant="danger" label={tr({ ar: 'رفض', en: 'Reject' })} fields={[reasonField()]} run={(api, v) => api.post(`/v1/provider/bookings/${id}/reject`, v)} />

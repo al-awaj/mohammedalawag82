@@ -8,7 +8,7 @@ import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, disput
 
 interface Booking {
   id: string; number: string; orderId: string; status: string; serviceId: string; serviceTitle: Record<string, string>; packageName: Record<string, string> | null; startAt: string; endAt: string;
-  guests: number | null; addOns: { code: string; name: Record<string, string>; price: string }[]; subtotal: string; discountAmount: string; total: string; currency: string; upfrontAmount: string; instalmentPlan: Instalment[] | null;
+  guests: number | null; addOns: { code: string; name: Record<string, string>; price: string }[]; subtotal: string; discountAmount: string; total: string; currency: string; upfrontAmount: string; instalmentPlan: Instalment[] | null; hasContract: boolean;
   balanceDueAt: string | null; paidAmount: string; remainingAmount: string; providerName: string | null; holdExpiresAt: string | null; decisionReason: string | null;
   cancellationPolicy: { description: Record<string, string>; tiers: { hoursBefore: number; refundPercentOfPaid: number }[]; depositRefundable: boolean } | null;
   history: { to: string; reason: string | null; at: string }[]; eventId: string | null;
@@ -30,6 +30,9 @@ export default function BookingPage({ params }: { params: Promise<{ id: string }
     <Page title={`${tr({ ar: 'حجز', en: 'Booking' })} ${b.number}`} actions={<>
       {['awaiting_payment', 'confirmed', 'in_progress'].includes(b.status) && <Link className="btn btn-primary" href={`/orders/${b.orderId}`}>{tr({ ar: 'الدفع', en: 'Payment' })}</Link>}
       <ApiLink path={`/v1/bookings/${id}/statement?format=html&lang=${lang}`}>{tr({ ar: 'كشف الحجز', en: 'Statement' })}</ApiLink>
+      <ApiLink path={`/v1/bookings/${id}/statement?format=pdf&lang=${lang}`}>PDF</ApiLink>
+      {b.hasContract && <ApiLink path={`/v1/bookings/${id}/contract?format=html&lang=${lang}`}>{tr({ ar: 'عقد الحجز', en: 'Booking contract' })}</ApiLink>}
+      {b.hasContract && <ApiLink path={`/v1/bookings/${id}/contract?format=pdf&lang=${lang}`}>{tr({ ar: 'العقد PDF', en: 'Contract PDF' })}</ApiLink>}
       {cancellable && p && (
         <ActionButton variant="danger" label={tr({ ar: 'إلغاء الحجز', en: 'Cancel booking' })}
           note={p.mode === 'immediate'
