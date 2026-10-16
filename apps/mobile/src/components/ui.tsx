@@ -3,10 +3,13 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { ApiError, enumLabel, formatMoney } from '@events/shared';
 import { useSession } from '../lib/session';
 
+/** Same palette as the website: deep violet with a warm gold accent. */
 export const colors = {
-  bg: '#f6f7f9', surface: '#ffffff', text: '#18202b', muted: '#5d6878', border: '#dfe3ea', primary: '#6a3df0', primarySoft: '#efe9ff',
+  bg: '#f6f5fb', surface: '#ffffff', surface2: '#faf9fe', text: '#141127', muted: '#6b6884', border: '#ebe8f4',
+  primary: '#6d28d9', primary2: '#9333ea', primarySoft: '#f1eafe', gold: '#c9973f', goldSoft: '#fbf3e4', ink: '#1c1534',
   ok: '#137a4a', okSoft: '#e3f5ec', bad: '#b42318', badSoft: '#fdecea', warn: '#9a6200', warnSoft: '#fff4dc',
 };
+export const shadow = { shadowColor: '#2a1660', shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 3 };
 
 export function Screen({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
   return scroll
@@ -103,23 +106,23 @@ export function Badge({ group, value }: { group: string; value: string | null | 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, gap: 12 },
-  h1: { fontSize: 22, fontWeight: '700', color: colors.text, textAlign: 'left' },
-  h2: { fontSize: 17, fontWeight: '600', color: colors.text, textAlign: 'left' },
+  h1: { fontSize: 24, fontWeight: '800', color: colors.text, textAlign: 'left', letterSpacing: -0.3 },
+  h2: { fontSize: 18, fontWeight: '700', color: colors.text, textAlign: 'left', marginTop: 6 },
   p: { color: colors.text, fontSize: 15, lineHeight: 22, textAlign: 'left' },
   muted: { color: colors.muted },
   small: { fontSize: 13 },
-  card: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 6 },
-  btn: { backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
-  btnSecondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  card: { backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 8, ...shadow },
+  btn: { backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 18, alignItems: 'center', ...shadow, shadowOpacity: 0.18 },
+  btnSecondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, shadowOpacity: 0, elevation: 0 },
   btnDanger: { backgroundColor: colors.bad },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   label: { color: colors.muted, marginBottom: 4, fontSize: 13, textAlign: 'left' },
-  input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: colors.text },
+  input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.text },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
-  alertBad: { backgroundColor: colors.badSoft, borderRadius: 10, padding: 10 },
-  notice: { borderRadius: 10, padding: 10 },
-  empty: { padding: 24, alignItems: 'center', borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border, borderRadius: 12 },
+  alertBad: { backgroundColor: colors.badSoft, borderRadius: 14, padding: 12 },
+  notice: { borderRadius: 14, padding: 12 },
+  empty: { padding: 28, alignItems: 'center', borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface2 },
   money: { fontWeight: '700', color: colors.text, writingDirection: 'ltr' },
-  chip: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
-  badge: { alignSelf: 'flex-start', backgroundColor: '#eef0f4', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 2 },
+  chip: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
+  badge: { alignSelf: 'flex-start', backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
 });

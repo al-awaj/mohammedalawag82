@@ -5,10 +5,12 @@
   "dependencies": {
     "@events/shared": "*",
     "@expo/metro-runtime": "~57.0.16",
+    "@expo/vector-icons": "^15.1.1",
     "@tanstack/react-query": "^5.104.2",
     "expo": "~57.0.28",
     "expo-constants": "~57.0.21",
     "expo-document-picker": "~57.0.3",
+    "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.12",
     "expo-location": "~57.0.21",
     "expo-print": "~57.0.2",
