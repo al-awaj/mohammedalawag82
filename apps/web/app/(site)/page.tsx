@@ -4,6 +4,7 @@ import { localized } from '@events/shared';
 import { ServiceCards, type ServiceCard } from '@/lib/cards';
 import { categoryIcon, categoryTone } from '@/lib/icons';
 import { currentCountry, publicGet, visitor, displayRates } from '@/lib/server';
+import { CountNumber, HeroRays, HeroTitle, StarButton } from '@/lib/home-motion';
 
 type Category = { id: string; slug: string; name: Record<string, string>; description: Record<string, string> | null; imageUrl: string | null; types: { id: string; code: string; name: Record<string, string> }[]; children: Category[] };
 
@@ -22,10 +23,13 @@ export default async function Home() {
   return (
     <>
       <section className="hero">
+        <HeroRays />
         <div className="hero-glow" aria-hidden />
         <div className="container hero-inner">
           <span className="hero-eyebrow"><Sparkles className="ico" aria-hidden />{ar ? `منصة حجز خدمات المناسبات في ${localized(country.name, lang)}` : `Event services in ${localized(country.name, lang)}`}</span>
-          <h1>{ar ? <>كل ما تحتاجه <span className="grad-text">لمناسبتك</span><br />في مكان واحد</> : <>Everything for <span className="grad-text">your occasion</span><br />in one place</>}</h1>
+          {ar
+            ? <HeroTitle text="كل ما تحتاجه لمناسبتك في مكان واحد" gradient={[3]} breakAfter={[3]} />
+            : <HeroTitle text="Everything for your occasion in one place" gradient={[2, 3]} breakAfter={[3]} />}
           <p className="hero-sub">{ar ? 'قاعات، تصوير، ضيافة، تنسيق وأكثر — أسعار واضحة، توافر فوري، وسياسة إلغاء معلنة قبل الدفع.' : 'Venues, photography, catering, decor and more — clear prices, live availability and a cancellation policy shown before you pay.'}</p>
           <form className="hero-search" action="/search" method="get">
             <label className="hs-field">
@@ -40,7 +44,7 @@ export default async function Home() {
               <CalendarDays className="ico" aria-hidden />
               <input name="date" type="date" aria-label={ar ? 'التاريخ' : 'Date'} />
             </label>
-            <button className="btn btn-primary btn-lg" type="submit"><Search className="ico" aria-hidden />{ar ? 'ابحث' : 'Search'}</button>
+            <StarButton><Search className="ico" aria-hidden />{ar ? 'ابحث' : 'Search'}</StarButton>
           </form>
           {cats.length > 0 && (
             <div className="hero-chips">
@@ -97,7 +101,7 @@ export default async function Home() {
               { icon: CreditCard, t: ar ? 'ادفع بأمان' : 'Pay securely', d: ar ? 'عربون أو كامل المبلغ حسب الخدمة، مع فاتورة وإيصال لكل دفعة.' : 'Deposit or full amount per service, with an invoice and receipt for every payment.' },
             ].map((s, i) => (
               <div key={i} className="step">
-                <span className="step-num">{i + 1}</span>
+                <span className="step-num"><CountNumber value={i + 1} /></span>
                 <span className="step-icon"><s.icon aria-hidden /></span>
                 <h3>{s.t}</h3>
                 <p className="muted">{s.d}</p>

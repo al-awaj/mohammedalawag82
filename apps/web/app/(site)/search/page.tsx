@@ -5,6 +5,7 @@ import { toQueryString } from '@events/shared';
 import { ServiceCards, type ServiceCard } from '@/lib/cards';
 import { currentCountry, publicGet, visitor, displayRates } from '@/lib/server';
 import { NearMe } from '@/lib/near-me';
+import { CountNumber } from '@/lib/home-motion';
 
 export const metadata: Metadata = { title: 'البحث عن خدمات' };
 const KEYS = ['q', 'category', 'type', 'city', 'date', 'minPrice', 'maxPrice', 'minRating', 'sort', 'lat', 'lng', 'radiusKm'] as const;
@@ -47,7 +48,7 @@ export default async function Search({ searchParams }: { searchParams: Promise<R
         <Suspense fallback={null}><NearMe ar={ar} /></Suspense>
       </form>
       {!res ? <div className="alert alert-error">{ar ? 'تعذر تحميل النتائج.' : 'Could not load results.'}</div> : <>
-        <p className="muted">{ar ? `${res.total} نتيجة` : `${res.total} results`}</p>
+        <p className="muted"><CountNumber value={res.total} /> {ar ? 'نتيجة' : 'results'}</p>
         {res.items.length ? <ServiceCards items={res.items} lang={lang} display={await displayRates(res.items.map((x) => x.currency), lang)} /> : <div className="empty">{ar ? 'لا توجد نتائج مطابقة.' : 'No matching services.'}</div>}
         <div className="pager">
           {offset > 0 && <Link className="btn btn-ghost" href={`/search${toQueryString({ ...q, offset: Math.max(0, offset - LIMIT) })}`}>{ar ? 'السابق' : 'Previous'}</Link>}

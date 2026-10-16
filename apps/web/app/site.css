@@ -182,3 +182,14 @@ body { overflow-x: hidden; }
 .footer-contact a, .footer-contact span { display: inline-flex; align-items: center; gap: 8px; }
 .social-link { padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .18); font-size: .85rem; }
 .approx { display: block; margin-top: 2px; }
+
+/* Motion (GSAP + Lenis + React Bits): calm, and fully off for reduced motion */
+.hero-rays { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen; }
+.hero h1.hero-title { justify-content: center; column-gap: 0; }
+.hero-title .grad-text { padding-bottom: .08em; }
+.star-btn.star-border { padding: 13px 22px; border-radius: 14px; font-weight: 600; box-shadow: 0 6px 16px -6px rgba(109, 40, 217, .55); }
+.star-btn.star-border:hover { transform: translateY(-1px); }
+@media (prefers-reduced-motion: reduce) {
+  .hero-title span { opacity: 1 !important; filter: none !important; transform: none !important; }
+  .site-main .section, .site-main .cta { opacity: 1 !important; visibility: visible !important; transform: none !important; }
+}

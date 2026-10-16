@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { AtSign, Mail, MapPin, MessageCircle, Phone, Sparkles } from 'lucide-react';
 import { Header, type Branding } from '@/lib/header';
+import { MotionLayer } from '@/lib/motion';
 import { BRAND } from '@/lib/brand';
 import { currentCountry, displayCurrency, publicGet, visitor } from '@/lib/server';
 
@@ -24,6 +25,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
       {color && color.toLowerCase() !== '#6d28d9' && <style>{`:root{--primary:${color};--primary-2:${color}}`}</style>}
       <Header countries={list.map((x) => ({ code: x.code, name: x.name }))} current={country?.code ?? null} brand={brand}
         currencies={(currencies ?? []).map((x) => x.code.trim())} display={display} />
+      <MotionLayer />
       <main className="site-main">{children}</main>
       <footer className="site-footer">
         <div className="footer-inner">
