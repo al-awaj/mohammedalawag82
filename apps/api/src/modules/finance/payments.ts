@@ -3,7 +3,8 @@ import type { Config } from '../../config.js';
 import { withTx, type Db, type Executor } from '../../db/pool.js';
 import { audit, systemActor, type ActorContext } from '../../lib/audit.js';
 import { AppError, badRequest, conflict, notFound } from '../../lib/errors.js';
-import { fromUnits, min, percentOf, roundToMinor, toUnits } from '../../lib/money.js';
+import { fromUnits, min, mulRate, percentOf, roundToMinor, toUnits } from '../../lib/money.js';
+import { findRate } from '../reference/routes.js';
 import { enqueueMessage } from '../../lib/outbox.js';
 import { confirmAfterPayment } from '../booking/service.js';
 import { getSetting } from '../settings/registry.js';
@@ -227,7 +228,38 @@ async function lockPayment(c: Executor, id: string): Promise<PaymentRow> {
  * once, and bookings whose upfront amount is covered are confirmed. Safe to call twice: a payment that
  * already succeeded is left untouched (duplicate notices, clause 36).
  */
-export async function markSucceeded(c: pg.PoolClient, paymentId: string, verified: string, fee: string, ctx: ActorContext): Promise<{ changed: boolean }> {
+/** Money received in another currency, as entered by finance staff (clause 11). */
+export interface ReceivedInput { currency: string; amount: string; rate?: string | undefined; rateSource?: string | undefined; conversionFee?: string | undefined }
+
+/**
+ * Converts what was received into the booking currency with the stored (or entered) rate. The exchange difference is
+ * what was credited to the customer minus the converted value; it is booked to the FX account, never hidden in the fund.
+ */
+async function conversion(c: Executor, p: PaymentRow, verified: string, r: ReceivedInput, ctx: ActorContext) {
+  const cur = p.currency_code.trim();
+  const minor = (await c.query<{ m: number }>('SELECT minor_units AS m FROM currencies WHERE code = $1', [cur])).rows[0]!.m;
+  let rate = r.rate ?? null;
+  let source = r.rateSource ?? null;
+  let rateAt = new Date();
+  let rateId: string | null = null;
+  if (r.currency === cur) { rate = '1'; source = 'same currency'; }
+  if (!rate) {
+    const found = await findRate(c, r.currency, cur);
+    if (!found) throw badRequest('FX_RATE_MISSING', { from: r.currency, to: cur });
+    rate = found.rate; source = found.source; rateAt = found.effectiveAt; rateId = found.id;
+  } else if (!source) source = `entered by staff ${ctx.actorId ?? ''}`.trim();
+  const converted = roundToMinor(mulRate(toUnits(r.amount), rate), minor);
+  const fee = r.conversionFee ? toUnits(r.conversionFee) : 0n;
+  if (fee >= converted) throw badRequest('VALIDATION_FAILED', [{ path: '/received/conversionFee', message: 'must be below the converted amount' }]);
+  const difference = toUnits(verified) - converted;
+  await c.query(
+    `UPDATE payments SET received_currency = $2, received_amount = $3, fx_rate = $4, fx_rate_at = $5, fx_rate_source = $6, fx_rate_id = $7,
+            converted_amount = $8, fx_conversion_fee = $9, fx_difference = $10 WHERE id = $1`,
+    [p.id, r.currency, r.amount, rate, rateAt, source, rateId, fromUnits(converted), fromUnits(fee), fromUnits(difference)]);
+  return { fee, difference };
+}
+
+export async function markSucceeded(c: pg.PoolClient, paymentId: string, verified: string, fee: string, ctx: ActorContext, received?: ReceivedInput): Promise<{ changed: boolean }> {
   const p = await lockPayment(c, paymentId);
   if (p.status === 'succeeded') return { changed: false };
   if (!['pending', 'awaiting_verification'].includes(p.status)) throw conflict('INVALID_STATUS_TRANSITION', { from: p.status });
@@ -246,14 +278,21 @@ export async function markSucceeded(c: pg.PoolClient, paymentId: string, verifie
   }
   await c.query(`UPDATE payments SET status = 'succeeded', verified_amount = $2, gateway_fee = $3, succeeded_at = now() WHERE id = $1`, [p.id, verified, fee]);
   await recordStatus(c, p.id, p.status, 'succeeded', ctx, null);
+  const fx = received ? await conversion(c, p, verified, received, ctx) : { fee: 0n, difference: 0n };
 
   // ---- Ledger (docs/05-financial-design.md §3-4)
   const cur = p.currency_code.trim();
+  const fundIn = toUnits(verified) - toUnits(fee) - fx.fee - fx.difference;
+  if (p.model === 'platform' && fundIn <= 0n) throw badRequest('VALIDATION_FAILED', [{ path: '/received', message: 'the received value does not cover the fees' }]);
   const lines = p.model === 'platform'
     ? [
-        { accountId: p.account_id!, debit: fromUnits(toUnits(verified) - toUnits(fee)), currency: cur, paymentId: p.id },
-        // Provider fees are an expense of the platform, never booked as commission (clause 41.6).
-        { accountId: await systemAccount(c, p.country_id, cur, 'gateway_fees'), debit: fee, currency: cur, paymentId: p.id },
+        { accountId: p.account_id!, debit: fromUnits(fundIn), currency: cur, paymentId: p.id },
+        // Provider fees are an expense of the platform, never booked as commission (clause 41.6); so is a bank's conversion fee.
+        { accountId: await systemAccount(c, p.country_id, cur, 'gateway_fees'), debit: fromUnits(toUnits(fee) + fx.fee), currency: cur, paymentId: p.id },
+        ...(fx.difference !== 0n ? [{
+          accountId: await systemAccount(c, p.country_id, cur, 'fx_difference'), currency: cur, paymentId: p.id, memo: 'exchange difference',
+          ...(fx.difference > 0n ? { debit: fromUnits(fx.difference) } : { credit: fromUnits(-fx.difference) }),
+        }] : []),
         ...await Promise.all(applied.map(async (x) => ({ accountId: await systemAccount(c, p.country_id, cur, 'customer_advances'), credit: fromUnits(x.amount), currency: cur, paymentId: p.id, bookingId: x.bookingId, providerId: x.providerId }))),
       ]
     : (await Promise.all(applied.map(async (x) => [
@@ -392,7 +431,7 @@ export async function handleWebhook(db: Db, config: Config, integrationId: strin
 }
 
 /** Staff decision on a proof / manual payment (clause 33: reviewer and verified amount recorded). */
-export async function reviewPayment(db: Db, paymentId: string, decision: 'approve' | 'reject', verifiedAmount: string | undefined, note: string, ctx: ActorContext) {
+export async function reviewPayment(db: Db, paymentId: string, decision: 'approve' | 'reject', verifiedAmount: string | undefined, note: string, ctx: ActorContext, received?: ReceivedInput) {
   return withTx(db, async (c) => {
     const p = await lockPayment(c, paymentId);
     if (p.status !== 'awaiting_verification') throw conflict('INVALID_STATUS_TRANSITION', { from: p.status });
@@ -407,7 +446,7 @@ export async function reviewPayment(db: Db, paymentId: string, decision: 'approv
       if (!proofs.rowCount) throw conflict('PROOF_REQUIRED');
     }
     await c.query('UPDATE payments SET verified_by = $2, verified_at = now(), review_note = $3 WHERE id = $1', [p.id, ctx.actorId, note]);
-    await markSucceeded(c, p.id, verifiedAmount ?? p.amount, '0', ctx);
+    await markSucceeded(c, p.id, verifiedAmount ?? p.amount, '0', ctx, received);
     return { status: 'succeeded' };
   });
 }

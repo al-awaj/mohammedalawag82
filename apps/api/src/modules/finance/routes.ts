@@ -24,6 +24,8 @@ const PAYMENT_COLUMNS = `p.id, p.number, p.order_id AS "orderId", p.model, p.met
   p.reported_amount AS "reportedAmount", p.verified_amount AS "verifiedAmount", p.gateway_fee AS "gatewayFee", p.status,
   p.checkout_url AS "checkoutUrl", p.failure_reason AS "failureReason", p.needs_attention AS "needsAttention", p.review_note AS "reviewNote",
   p.verified_at AS "verifiedAt", p.succeeded_at AS "succeededAt", p.created_at AS "createdAt",
+  p.received_currency AS "receivedCurrency", p.received_amount AS "receivedAmount", p.fx_rate AS "fxRate", p.fx_rate_at AS "fxRateAt",
+  p.fx_rate_source AS "fxRateSource", p.converted_amount AS "convertedAmount", p.fx_conversion_fee AS "fxConversionFee", p.fx_difference AS "fxDifference",
   coalesce((SELECT json_agg(json_build_object('bookingId', a.booking_id, 'amount', a.amount, 'verifiedAmount', a.verified_amount))
               FROM payment_allocations a WHERE a.payment_id = p.id), '[]') AS allocations,
   (SELECT count(*)::int FROM payment_proofs pp WHERE pp.payment_id = p.id) AS "proofCount",
@@ -384,13 +386,20 @@ export async function financeRoutes(app: App, deps: Deps) {
 
   app.post('/admin/payments/:id/review', {
     ...staff('payments.review'),
-    schema: { tags: ['admin:payments'], security: sec, params: idParams, body: z.object({ decision: z.enum(['approve', 'reject']), verifiedAmount: money.optional(), note: reasonSchema }) },
+    schema: {
+      tags: ['admin:payments'], security: sec, params: idParams,
+      body: z.object({
+        decision: z.enum(['approve', 'reject']), verifiedAmount: money.optional(), note: reasonSchema,
+        // Money that arrived in another currency (clause 11): the rate is taken from the published rates unless entered.
+        received: z.object({ currency, amount: money, rate: z.string().regex(/^\d{1,14}(\.\d{1,10})?$/).optional(), rateSource: z.string().trim().min(2).max(200).optional(), conversionFee: money.optional() }).optional(),
+      }),
+    },
   }, async (req) => {
     const p = (await db.query<{ country_id: string }>('SELECT country_id FROM payments WHERE id = $1', [req.params.id])).rows[0];
     if (!p) throw notFound();
     // Reviewing and approving money are separate permissions (clause 60).
     assertCan(requireUser(req), req.body.decision === 'approve' ? 'payments.approve' : 'payments.review', p.country_id);
-    return reviewPayment(db, req.params.id, req.body.decision, req.body.verifiedAmount, req.body.note, actorOf(req));
+    return reviewPayment(db, req.params.id, req.body.decision, req.body.verifiedAmount, req.body.note, actorOf(req), req.body.received);
   });
 
   app.get('/admin/payment-events', {
