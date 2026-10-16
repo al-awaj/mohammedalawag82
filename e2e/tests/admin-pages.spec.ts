@@ -23,6 +23,8 @@ test('every admin screen loads without errors for a system administrator', async
   }
   // Every report runs.
   await page.goto(`${ADMIN}/reports`);
+  // The report list arrives from the API after the page renders.
+  await expect(page.locator('select').first().locator('option')).toHaveCount(15);
   const reports = await page.locator('select').first().locator('option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
   expect(reports).toHaveLength(15);
   for (const r of reports) {
