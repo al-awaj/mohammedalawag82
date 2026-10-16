@@ -9,7 +9,7 @@ export function Button({ children, variant = 'primary', ...rest }: React.ButtonH
 
 export function Loading() {
   const t = useT();
-  return <div className="muted pad" role="status">{t('appLoading')}</div>;
+  return <div className="loading" role="status"><span className="spinner" aria-hidden />{t('appLoading')}</div>;
 }
 
 export function Empty({ children }: { children?: ReactNode }) {

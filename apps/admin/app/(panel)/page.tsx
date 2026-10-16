@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import { Ban, ClipboardCheck, CreditCard, MessageSquareWarning, TriangleAlert, Undo2, type LucideIcon } from 'lucide-react';
 import { useCan, useGet, useTr } from '@events/web-kit/client';
 import { Card, ErrorBox, Loading, Money, Notice, Page } from '@events/web-kit/ui';
 import { useCountries } from '@/lib/util';
@@ -15,17 +16,17 @@ export default function Dashboard() {
   const can = useCan();
   const countries = useCountries();
   const { data, error, isLoading } = useGet<Overview>(can('reports.view') ? '/v1/admin/reports/overview' : null);
-  const queue = (path: string, perm: string, label: { ar: string; en: string }, query?: Record<string, string>) =>
-    can(perm) ? <QueueCard path={path} query={query} label={tr(label)} /> : null;
+  const queue = (path: string, perm: string, label: { ar: string; en: string }, query: Record<string, string>, icon: LucideIcon) =>
+    can(perm) ? <QueueCard path={path} query={query} label={tr(label)} icon={icon} /> : null;
   return (
     <Page title={tr({ ar: 'لوحة المتابعة', en: 'Dashboard' })}>
       <div className="grid">
-        {queue('/v1/admin/provider-applications', 'provider_applications.view', { ar: 'طلبات تسجيل بانتظار المراجعة', en: 'Applications awaiting review' }, { status: 'submitted' })}
-        {queue('/v1/admin/payments', 'finance.view', { ar: 'مدفوعات بانتظار التحقق', en: 'Payments awaiting verification' }, { status: 'awaiting_verification' })}
-        {queue('/v1/admin/payments', 'finance.view', { ar: 'مدفوعات تحتاج متابعة', en: 'Payments needing attention' }, { needsAttention: 'true' })}
-        {queue('/v1/admin/refunds', 'refunds.execute', { ar: 'استردادات بانتظار الاعتماد', en: 'Refunds awaiting approval' }, { status: 'requested' })}
-        {queue('/v1/admin/disputes', 'disputes.view', { ar: 'نزاعات جديدة', en: 'New disputes' }, { status: 'new' })}
-        {queue('/v1/admin/cancellation-requests', 'bookings.cancel', { ar: 'طلبات إلغاء معلقة', en: 'Pending cancellation requests' }, { status: 'pending' })}
+        {queue('/v1/admin/provider-applications', 'provider_applications.view', { ar: 'طلبات تسجيل بانتظار المراجعة', en: 'Applications awaiting review' }, { status: 'submitted' }, ClipboardCheck)}
+        {queue('/v1/admin/payments', 'finance.view', { ar: 'مدفوعات بانتظار التحقق', en: 'Payments awaiting verification' }, { status: 'awaiting_verification' }, CreditCard)}
+        {queue('/v1/admin/payments', 'finance.view', { ar: 'مدفوعات تحتاج متابعة', en: 'Payments needing attention' }, { needsAttention: 'true' }, TriangleAlert)}
+        {queue('/v1/admin/refunds', 'refunds.execute', { ar: 'استردادات بانتظار الاعتماد', en: 'Refunds awaiting approval' }, { status: 'requested' }, Undo2)}
+        {queue('/v1/admin/disputes', 'disputes.view', { ar: 'نزاعات جديدة', en: 'New disputes' }, { status: 'new' }, MessageSquareWarning)}
+        {queue('/v1/admin/cancellation-requests', 'bookings.cancel', { ar: 'طلبات إلغاء معلقة', en: 'Pending cancellation requests' }, { status: 'pending' }, Ban)}
       </div>
       {!can('reports.view') ? null : isLoading ? <Loading /> : error ? <ErrorBox error={error} /> : data && (
         <>
@@ -70,11 +71,12 @@ const LINKS: Record<string, string> = {
   '/v1/admin/provider-applications': '/applications', '/v1/admin/payments': '/payments', '/v1/admin/refunds': '/refunds',
   '/v1/admin/disputes': '/disputes', '/v1/admin/cancellation-requests': '/cancellation-requests',
 };
-function QueueCard({ path, query, label }: { path: string; query?: Record<string, string>; label: string }) {
+function QueueCard({ path, query, label, icon: Icon }: { path: string; query?: Record<string, string>; label: string; icon: LucideIcon }) {
   const { data } = useGet<unknown>(path, { ...query, limit: 200 });
   const n = Array.isArray(data) ? data.length : (data as { total?: number } | undefined)?.total;
   return (
-    <Link href={LINKS[path] ?? '/'} className="stat" style={{ color: 'inherit' }}>
+    <Link href={LINKS[path] ?? '/'} className="stat stat-link" style={{ color: 'inherit' }}>
+      <span className="stat-icon"><Icon className="ico" aria-hidden /></span>
       <div className="stat-label">{label}</div>
       <div className="stat-value">{n === undefined ? '…' : n === 200 ? '200+' : n}</div>
     </Link>

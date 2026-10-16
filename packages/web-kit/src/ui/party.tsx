@@ -140,7 +140,12 @@ export function MyDocumentsPage() {
           { key: 'kind', label: { ar: 'النوع', en: 'Kind' }, render: (d) => <Badge group="document" value={d.kind} /> },
           { key: 'total', label: { ar: 'المبلغ', en: 'Amount' }, render: (d) => <Money amount={d.total} currency={d.currency} /> },
           { key: 'issuedAt', label: { ar: 'التاريخ', en: 'Date' }, render: (d) => <DateTime value={d.issuedAt} /> },
-          { key: 'print', label: '', render: (d) => <a href={`/bff/v1/documents/${d.id}?format=html&lang=${lang}`} target="_blank" rel="noopener noreferrer">{tr({ ar: 'عرض وطباعة', en: 'View & print' })}</a> },
+          { key: 'print', label: '', render: (d) => (
+            <span className="row gap">
+              <a href={`/bff/v1/documents/${d.id}?format=html&lang=${lang}`} target="_blank" rel="noopener noreferrer">{tr({ ar: 'عرض وطباعة', en: 'View & print' })}</a>
+              <a href={`/bff/v1/documents/${d.id}?format=pdf&lang=${lang}`} target="_blank" rel="noopener noreferrer" data-testid="doc-pdf">PDF</a>
+            </span>
+          ) },
         ]} />
       )}
     </Page>

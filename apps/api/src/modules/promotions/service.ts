@@ -8,7 +8,7 @@ export interface ItemDiscount { amount: bigint; platformBorne: bigint; providerB
 interface PromoRow {
   id: string; code: string; discount_type: 'percent' | 'fixed'; discount_value: string; currency_code: string | null; max_discount: string | null;
   min_booking_total: string | null; starts_at: Date; ends_at: Date; usage_limit_total: number | null; usage_limit_per_customer: number | null;
-  country_id: string | null; service_type_ids: string[] | null; service_ids: string[] | null; provider_id: string | null;
+  country_id: string | null; country_ids: string[] | null; service_type_ids: string[] | null; service_ids: string[] | null; provider_id: string | null;
   cost_bearer: 'platform' | 'provider' | 'shared'; provider_share_percent: string | null; is_active: boolean; now: Date;
 }
 
@@ -39,6 +39,7 @@ export async function evaluateCoupon(c: Executor, code: string, items: DiscountI
 
   const eligible = items.filter((i) =>
     (!p.country_id || p.country_id === i.countryId) &&
+    (!p.country_ids?.length || p.country_ids.includes(i.countryId)) &&
     (!p.service_ids?.length || p.service_ids.includes(i.serviceId)) &&
     (!p.service_type_ids?.length || p.service_type_ids.includes(i.serviceTypeId)) &&
     (!p.provider_id || p.provider_id === i.providerId) &&

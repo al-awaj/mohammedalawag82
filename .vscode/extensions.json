@@ -1,0 +1,3 @@
+{
+  "recommendations": ["anthropic.claude-code", "vitest.explorer", "ms-playwright.playwright", "ckolkman.vscode-postgres"]
+}

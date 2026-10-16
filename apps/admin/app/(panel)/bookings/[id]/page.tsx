@@ -2,12 +2,12 @@
 import Link from 'next/link';
 import { use } from 'react';
 import { useCan, useGet, useTr } from '@events/web-kit/client';
-import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, ErrorBox, Json, Loading, Money, Page, reasonField, Text } from '@events/web-kit/ui';
+import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, ErrorBox, Json, Loading, Money, Page, reasonField, Text, RescheduleCard, InstalmentSchedule, type Instalment } from '@events/web-kit/ui';
 
 interface Booking {
   id: string; number: string; orderId: string; orderNumber: string; status: string; serviceId: string; serviceTitle: Record<string, string>; packageName: Record<string, string> | null;
   startAt: string; endAt: string; units: number; guests: number | null; pricingUnit: string; unitPrice: string; quantityFactor: string; addOns: { code: string; name: Record<string, string>; price: string }[];
-  subtotal: string; total: string; currency: string; depositType: string; depositValue: string; upfrontAmount: string; balanceDueAt: string | null; securityDepositAmount: string;
+  subtotal: string; total: string; currency: string; depositType: string; depositValue: string; upfrontAmount: string; instalmentPlan: Instalment[] | null; hasContract: boolean; balanceDueAt: string | null; securityDepositAmount: string;
   cancellationPolicy: unknown; requiresProviderApproval: boolean; holdExpiresAt: string | null; approvalDeadline: string | null; discountAmount: string;
   discountPlatformBorne: string; discountProviderBorne: string; decisionReason: string | null; customerNotes: string | null; createdAt: string;
   paidAmount: string; remainingAmount: string; providerName: string; customerName: string; customerPhone: string | null; customerEmail: string | null;
@@ -27,6 +27,9 @@ export default function BookingPage({ params }: { params: Promise<{ id: string }
   return (
     <Page title={`${tr({ ar: 'حجز', en: 'Booking' })} ${b.number}`} actions={<>
       {can('documents.print') && <ApiLink path={`/v1/bookings/${id}/statement?format=html&lang=ar`}>{tr({ ar: 'كشف الحجز', en: 'Booking statement' })}</ApiLink>}
+      {can('documents.print') && <ApiLink path={`/v1/bookings/${id}/statement?format=pdf&lang=ar`}>PDF</ApiLink>}
+      {b.hasContract && <ApiLink path={`/v1/bookings/${id}/contract?format=html&lang=ar`}>{tr({ ar: 'عقد الحجز', en: 'Booking contract' })}</ApiLink>}
+      {b.hasContract && <ApiLink path={`/v1/bookings/${id}/contract?format=pdf&lang=ar`}>{tr({ ar: 'العقد PDF', en: 'Contract PDF' })}</ApiLink>}
       {can('bookings.cancel') && cancellable && (
         <ActionButton variant="danger" label={tr({ ar: 'إلغاء من الإدارة', en: 'Cancel (admin)' })}
           note={tr({ ar: 'يُحسب الاسترداد وفق سياسة الحجز ما لم تحدد مبلغًا؛ صرف الاسترداد يتطلب اعتمادًا منفصلًا.', en: 'Refund follows the booking policy unless you set an amount; paying it out needs a separate approval.' })}
@@ -81,6 +84,8 @@ export default function BookingPage({ params }: { params: Promise<{ id: string }
       </Card>}
       {refundable.data && <Card title={tr({ ar: 'القابل للاسترداد', en: 'Refundable' })}><Json value={refundable.data} /></Card>}
       <Card title={tr({ ar: 'سياسة الإلغاء المحفوظة', en: 'Cancellation policy (snapshot)' })}>{b.cancellationPolicy ? <Json value={b.cancellationPolicy} /> : '—'}</Card>
+      <InstalmentSchedule plan={b.instalmentPlan} upfrontAmount={b.upfrontAmount} paidAmount={b.paidAmount} currency={b.currency} />
+      <RescheduleCard audience="staff" bookingId={b.id} startAt={b.startAt} endAt={b.endAt} movable={false} />
       <Card title={tr({ ar: 'السجل', en: 'History' })}>
         <DataTable rows={b.history.map((h, i) => ({ ...h, id: String(i) }))} columns={[
           { key: 'at', label: { ar: 'الوقت', en: 'Time' }, render: (h) => <DateTime value={h.at} /> },

@@ -80,6 +80,38 @@ test('a provider signs up, applies with documents, gets approved, lists a servic
   await expect(page.locator('.badge').first()).toHaveText('بانتظار المراجعة');
   await api('POST', `/v1/admin/services/${serviceId}/actions`, { token: admin, body: { action: 'publish' } });
 
+  // A package with its own inclusions, add-ons, days and image.
+  await page.goto(`${PROVIDER}/services/${serviceId}`);
+  await page.getByRole('tab', { name: 'الباقات' }).click();
+  await dialog(page, 'باقة جديدة', async (d) => {
+    await d.locator('input[name="name"]').fill('الباقة الذهبية');
+    await d.locator('input[name="price"]').fill('15000');
+    await d.locator('textarea[name="inclusionsAr"]').fill('إضاءة\nضيافة');
+    await d.locator('textarea[name="addOns"]').fill('dj | دي جي | DJ | 1500');
+    await d.locator('input[name="durationMinutes"]').fill('300');
+  });
+  const pkg = (await db().query('SELECT id, inclusions, add_ons, duration_minutes FROM packages WHERE service_id = $1', [serviceId])).rows[0];
+  expect(pkg.inclusions).toEqual([{ ar: 'إضاءة' }, { ar: 'ضيافة' }]);
+  expect(pkg.add_ons).toEqual([{ code: 'dj', name: { ar: 'دي جي', en: 'DJ' }, price: '1500' }]);
+  expect(pkg.duration_minutes).toBe(300);
+  await page.getByRole('tab', { name: 'الصور والفيديو' }).click();
+  await dialog(page, 'رفع صورة أو فيديو', async (d) => {
+    await d.locator('select[name="packageId"]').selectOption(pkg.id);
+    await d.locator('input[name="file"]').setInputFiles({ name: 'gold.png', mimeType: 'image/png', buffer: PNG });
+  });
+  await expect(page.locator(`img[src^="/bff/v1/media/"]`)).toHaveCount(2);
+  expect((await db().query('SELECT 1 FROM service_media WHERE package_id = $1', [pkg.id])).rowCount).toBe(1);
+
+  // Business profile: the city is edited directly, the business name goes to the administration.
+  await page.goto(`${PROVIDER}/profile`);
+  await page.locator('input[name="city"]').fill('Jeddah');
+  await page.locator('form button[type="submit"]').first().click();
+  await expect(page.getByText('تم الحفظ')).toBeVisible();
+  expect((await db().query('SELECT city FROM providers WHERE id = $1', [providerId])).rows[0].city).toBe('Jeddah');
+  await dialog(page, 'طلب تعديل', async (d) => { await d.locator('input[name="businessName"]').fill('قاعات الفرح الملكية'); });
+  await expect(page.getByText('بانتظار المراجعة')).toBeVisible();
+  expect((await db().query(`SELECT changes FROM provider_profile_changes WHERE provider_id = $1 AND status = 'pending'`, [providerId])).rows[0].changes).toEqual({ businessName: 'قاعات الفرح الملكية' });
+
   // A customer books; the provider accepts from the panel.
   const cust = await user(c.code, 'customer');
   const o = await order(cust.token, serviceId);
@@ -102,9 +134,14 @@ test('a provider signs up, applies with documents, gets approved, lists a servic
   });
   const blocks = await db().query(`SELECT 1 FROM calendar_blocks WHERE service_id = $1 AND kind = 'external'`, [serviceId]);
   expect(blocks.rowCount).toBe(1);
+  await expect(page.getByTestId('calendar')).toBeVisible();
+  await page.getByRole('tab', { name: 'أسبوع' }).click();
+  await expect(page.locator('[data-testid="calendar"][data-mode="week"]')).toBeVisible();
+  await page.getByRole('tab', { name: 'يوم' }).click();
+  await expect(page.locator('[data-testid="calendar"][data-mode="day"]')).toBeVisible();
 
   // Every provider screen loads without errors.
-  for (const p of ['/', '/notifications', '/services', '/calendar', '/policies', '/promotions', '/reviews', '/bookings', '/disputes', '/earnings', '/reports', '/documents', '/onboarding']) {
+  for (const p of ['/', '/notifications', '/help', '/services', '/calendar', '/policies', '/promotions', '/reviews', '/bookings', '/disputes', '/earnings', '/reports', '/documents', '/profile', '/onboarding']) {
     await page.goto(`${PROVIDER}${p}`);
     await expect(page.locator('main h1'), p).toBeVisible();
     await page.waitForLoadState('networkidle');

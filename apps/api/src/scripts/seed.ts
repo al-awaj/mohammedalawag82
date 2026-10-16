@@ -51,9 +51,9 @@ export async function seedReference(db: Db): Promise<void> {
     }
     // Default notification wording (ar/en) for SMS, email and in-app; never overwrites texts edited by admins.
     for (const [key, t] of Object.entries(DEFAULT_TEMPLATES)) {
-      for (const channel of ['sms', 'email', 'web']) {
+      for (const channel of ['sms', 'email', 'whatsapp', 'web']) {
         for (const lang of ['ar', 'en'] as const) {
-          const subject = channel === 'sms' ? null : (lang === 'ar' ? t.subjectAr : t.subjectEn) ?? (lang === 'ar' ? t.ar : t.en).slice(0, 80);
+          const subject = channel === 'sms' || channel === 'whatsapp' ? null : (lang === 'ar' ? t.subjectAr : t.subjectEn) ?? (lang === 'ar' ? t.ar : t.en).slice(0, 80);
           await c.query(
             'INSERT INTO notification_templates (key, channel, language, subject, body) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (key, channel, language) DO NOTHING',
             [key, channel, lang, subject, lang === 'ar' ? t.ar : t.en]);

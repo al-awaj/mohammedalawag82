@@ -3,7 +3,7 @@ import type { Executor } from '../../db/pool.js';
 import { audit, type ActorContext } from '../../lib/audit.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../lib/errors.js';
 import { fromUnits, min, toUnits } from '../../lib/money.js';
-import { enqueueMessage } from '../../lib/outbox.js';
+import { notifyUser } from '../../lib/notify.js';
 import { closeBookingFinancials } from './earnings.js';
 import { adapterFor, type IntegrationRow } from './gateways.js';
 import { post, systemAccount } from './ledger.js';
@@ -69,6 +69,11 @@ export async function requestRefunds(c: Executor, bookingId: string, amount: str
     await audit(c, ctx, { action: 'refund.requested', entityType: 'refund', entityId: id, after: { bookingId, paymentId: item.paymentId, amount: fromUnits(take), source }, reason });
     created.push(id);
   }
+  if (created.length) {
+    const customerId = (await c.query<{ customer_id: string }>('SELECT customer_id FROM bookings WHERE id = $1', [bookingId])).rows[0]!.customer_id;
+    const numbers = (await c.query<{ number: string }>('SELECT number FROM refunds WHERE id = ANY($1) ORDER BY number', [created])).rows.map((x) => x.number);
+    await notifyCustomer(c, customerId, 'refund.requested', { bookingId, number: numbers.join(', '), amount: `${amount} ${currency}` });
+  }
   return created;
 }
 
@@ -88,8 +93,7 @@ async function lockRefund(c: Executor, id: string) {
 }
 
 async function notifyCustomer(c: Executor, customerId: string, templateKey: string, payload: Record<string, unknown>) {
-  const u = (await c.query<{ phone: string | null; preferred_language: string }>('SELECT phone, preferred_language FROM users WHERE id = $1', [customerId])).rows[0];
-  if (u?.phone) await enqueueMessage(c, { channel: 'sms', recipientUserId: customerId, target: u.phone, templateKey, language: u.preferred_language, payload });
+  await notifyUser(c, customerId, templateKey, payload);
 }
 
 /** Approval moves the amount from customer advances to refunds payable (2200 → 2300). Requester and approver must differ. */
@@ -190,6 +194,7 @@ export async function failRefund(c: Executor, id: string, reason: string, ctx: A
   await c.query(`UPDATE refunds SET status = 'failed', failure_reason = $2 WHERE id = $1`, [id, reason]);
   await recordStatus(c, id, r.status, 'failed', ctx, reason);
   await audit(c, ctx, { action: 'refund.failed', entityType: 'refund', entityId: id, reason });
+  await notifyCustomer(c, r.customer_id, 'refund.failed', { refundId: id, number: r.number, amount: r.amount, reason });
   // A failed refund is retried as a new request, so the booking stays open for that.
   return { changed: true };
 }

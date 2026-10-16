@@ -78,6 +78,19 @@ function StaffList() {
             fields={[rolesField(roles, countries, s.roles), reasonField()]}
             run={(api, v) => api.put(`/v1/admin/staff/${s.id}/roles`, { roles: parseRoles(v.roles, roles, countries), reason: v.reason })} />
         ) : null },
+        { key: 'account', label: '', render: (s) => can('users.manage') ? (
+          <span className="row gap">
+            <ActionButton label={tr({ ar: 'البريد', en: 'Email' })} fields={[{ name: 'email', label: { ar: 'البريد الإلكتروني', en: 'Email' }, type: 'email', required: true, defaultValue: s.email }]}
+              run={(api, v) => api.patch(`/v1/admin/staff/${s.id}`, { email: v.email })} />
+            <ActionButton label={tr({ ar: 'كلمة مرور مؤقتة', en: 'Temporary password' })}
+              note={tr({ ar: 'تنتهي جلسات الموظف الحالية، وعليه تغييرها بعد الدخول من «أمان حسابي».', en: 'Their current sessions end; they should change it after signing in from “My account security”.' })}
+              fields={[{ name: 'newPassword', label: { ar: 'كلمة المرور المؤقتة', en: 'Temporary password' }, type: 'password', required: true }, reasonField()]}
+              run={(api, v) => api.post(`/v1/admin/staff/${s.id}/password`, v)} />
+            <ActionButton variant="ghost" label={tr({ ar: 'إعادة ضبط التحقق بخطوتين', en: 'Reset two-step' })}
+              note={tr({ ar: 'عند فقدان الجوال: يعيد الموظف إعداد التحقق بخطوتين عند الدخول التالي.', en: 'For a lost phone: they set two-step sign-in up again at the next sign-in.' })}
+              fields={[reasonField()]} run={(api, v) => api.post(`/v1/admin/staff/${s.id}/mfa/reset`, v)} />
+          </span>
+        ) : null },
       ]} />
     </>
   );

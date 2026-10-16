@@ -3,14 +3,15 @@ import Link from 'next/link';
 import { use } from 'react';
 import { formatMoney, localized } from '@events/shared';
 import { useApp, useGet, useTr } from '@events/web-kit/client';
-import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, disputeFields, ErrorBox, Loading, Money, Notice, Page } from '@events/web-kit/ui';
+import { EventPicker } from '@/lib/events';
+import { ActionButton, ApiLink, Badge, Card, DataTable, DateTime, Detail, disputeFields, ErrorBox, Loading, Money, Notice, Page, RescheduleCard, InstalmentSchedule, type Instalment } from '@events/web-kit/ui';
 
 interface Booking {
   id: string; number: string; orderId: string; status: string; serviceId: string; serviceTitle: Record<string, string>; packageName: Record<string, string> | null; startAt: string; endAt: string;
-  guests: number | null; addOns: { code: string; name: Record<string, string>; price: string }[]; subtotal: string; discountAmount: string; total: string; currency: string; upfrontAmount: string;
+  guests: number | null; addOns: { code: string; name: Record<string, string>; price: string }[]; subtotal: string; discountAmount: string; total: string; currency: string; upfrontAmount: string; instalmentPlan: Instalment[] | null; hasContract: boolean;
   balanceDueAt: string | null; paidAmount: string; remainingAmount: string; providerName: string | null; holdExpiresAt: string | null; decisionReason: string | null;
   cancellationPolicy: { description: Record<string, string>; tiers: { hoursBefore: number; refundPercentOfPaid: number }[]; depositRefundable: boolean } | null;
-  history: { to: string; reason: string | null; at: string }[];
+  history: { to: string; reason: string | null; at: string }[]; eventId: string | null;
 }
 type Preview = { mode: string; hoursBefore: number; platformPaid: string; directPaid: string; refund: string; retained: string; refundPercent: number | null; note: string };
 
@@ -29,6 +30,9 @@ export default function BookingPage({ params }: { params: Promise<{ id: string }
     <Page title={`${tr({ ar: 'حجز', en: 'Booking' })} ${b.number}`} actions={<>
       {['awaiting_payment', 'confirmed', 'in_progress'].includes(b.status) && <Link className="btn btn-primary" href={`/orders/${b.orderId}`}>{tr({ ar: 'الدفع', en: 'Payment' })}</Link>}
       <ApiLink path={`/v1/bookings/${id}/statement?format=html&lang=${lang}`}>{tr({ ar: 'كشف الحجز', en: 'Statement' })}</ApiLink>
+      <ApiLink path={`/v1/bookings/${id}/statement?format=pdf&lang=${lang}`}>PDF</ApiLink>
+      {b.hasContract && <ApiLink path={`/v1/bookings/${id}/contract?format=html&lang=${lang}`}>{tr({ ar: 'عقد الحجز', en: 'Booking contract' })}</ApiLink>}
+      {b.hasContract && <ApiLink path={`/v1/bookings/${id}/contract?format=pdf&lang=${lang}`}>{tr({ ar: 'العقد PDF', en: 'Contract PDF' })}</ApiLink>}
       {cancellable && p && (
         <ActionButton variant="danger" label={tr({ ar: 'إلغاء الحجز', en: 'Cancel booking' })}
           note={p.mode === 'immediate'
@@ -61,6 +65,9 @@ export default function BookingPage({ params }: { params: Promise<{ id: string }
           [tr({ ar: 'موعد سداد المتبقي', en: 'Balance due' }), <DateTime key="bd" value={b.balanceDueAt} dateOnly />],
         ]} />
       </Card>
+      <InstalmentSchedule plan={b.instalmentPlan} upfrontAmount={b.upfrontAmount} paidAmount={b.paidAmount} currency={b.currency} />
+      <RescheduleCard audience="customer" bookingId={id} startAt={b.startAt} endAt={b.endAt} movable={['awaiting_payment', 'confirmed'].includes(b.status) && new Date(b.startAt).getTime() > Date.now()} />
+      <EventPicker value={b.eventId} path={`/v1/bookings/${id}/event`} testId="booking-event" />
       {b.cancellationPolicy && <Card title={tr({ ar: 'سياسة الإلغاء المتفق عليها', en: 'Agreed cancellation policy' })}>
         <p>{localized(b.cancellationPolicy.description, lang)}</p>
         {p && <p className="small muted">{tr({ ar: 'لو ألغيت الآن:', en: 'If you cancel now:' })} {tr({ ar: 'استرداد', en: 'refund' })} {formatMoney(p.refund, b.currency)} · {tr({ ar: 'محتجز', en: 'retained' })} {formatMoney(p.retained, b.currency)}</p>}

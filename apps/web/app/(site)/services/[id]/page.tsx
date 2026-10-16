@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { formatDate, formatMoney, localized, type Lang } from '@events/shared';
 import { BookingWidget, type PublicService } from '@/lib/booking-widget';
-import { publicGet, visitor } from '@/lib/server';
+import { displayRates, publicGet, visitor } from '@/lib/server';
+import { approx } from '@/lib/cards';
 
 type Reviews = { count: number; average: string | null; items: { id: string; rating: number; comment: string | null; reviewer: string; createdAt: string }[] };
 
@@ -25,14 +26,15 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
   const [s, reviews] = await Promise.all([load(id, lang), publicGet<Reviews>(`/v1/services/${id}/reviews?limit=20`, lang)]);
   if (!s) notFound();
   const ar = lang === 'ar';
-  const images = s.media.filter((m) => m.kind === 'image');
+  const images = s.media.filter((m) => m.kind === 'image' && !m.packageId);
   const policy = s.cancellationPolicy;
+  const display = await displayRates([s.currency, ...s.packages.map((p) => p.currency)], lang);
   return (
     <div className="layout-2">
       <div>
         <h1>{localized(s.title, lang)}</h1>
         <p className="muted">
-          {localized(s.typeName, lang)} · {s.city}{s.providerName ? ` · ${s.providerName}` : ''}
+          {localized(s.typeName, lang)} · {s.city}{s.providerName && <> · {s.providerId ? <a href={`/providers/${s.providerId}`} data-testid="provider-link">{s.providerName}</a> : s.providerName}</>}
           {s.rating.average && <> · <span className="stars">★</span> {s.rating.average} ({s.rating.count})</>}
         </p>
         {images.length > 0 && <div className="gallery">{images.map((m) => <img key={m.id} src={`/bff${m.url}`} alt={m.caption ? localized(m.caption, lang) : ''} loading="lazy" />)}</div>}
@@ -47,7 +49,9 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
                 return (
                   <div key={f.key} className="detail-row">
                     <dt>{localized(f.label, lang)}</dt>
-                    <dd>{Array.isArray(v) ? v.map(opt).join('، ') : typeof v === 'boolean' ? (v ? '✓' : '✗') : typeof v === 'object' ? localized(v, lang) : opt(v)}</dd>
+                    <dd>{f.dataType === 'location' && v && typeof v === 'object'
+                      ? <a href={`https://www.google.com/maps/search/?api=1&query=${(v as { lat: number }).lat},${(v as { lng: number }).lng}`} target="_blank" rel="noopener noreferrer">{ar ? 'افتح في الخرائط' : 'Open in maps'}</a>
+                      : Array.isArray(v) ? v.map(opt).join('، ') : typeof v === 'boolean' ? (v ? '✓' : '✗') : typeof v === 'object' ? localized(v, lang) : opt(v)}</dd>
                   </div>
                 );
               })}
@@ -59,12 +63,26 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
             <h2>{ar ? 'الباقات' : 'Packages'}</h2>
             {s.packages.map((p) => (
               <div key={p.id} style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 10 }}>
-                <div className="row between"><strong>{localized(p.name, lang)}</strong><span className="price num" dir="ltr">{formatMoney(p.price, p.currency)}</span></div>
+                <div className="row between"><strong>{localized(p.name, lang)}</strong><span className="price num" dir="ltr">{formatMoney(p.price, p.currency)}{approx(p.price, p.currency, display) && <span className="approx small muted"> {approx(p.price, p.currency, display)}</span>}</span></div>
                 {p.description && <p className="muted small">{localized(p.description, lang)}</p>}
+                {s.media.some((m) => m.packageId === p.id) && <div className="gallery">{s.media.filter((m) => m.packageId === p.id && m.kind === 'image').map((m) => <img key={m.id} src={`/bff${m.url}`} alt={m.caption ? localized(m.caption, lang) : localized(p.name, lang)} loading="lazy" />)}</div>}
+                {p.durationMinutes && <p className="small muted">{ar ? `المدة: ${p.durationMinutes} دقيقة` : `Duration: ${p.durationMinutes} minutes`}</p>}
                 {p.inclusions.length > 0 && <ul className="small">{p.inclusions.map((i, n) => <li key={n}>{localized(i, lang)}</li>)}</ul>}
                 {p.addOns.length > 0 && <p className="small muted">{ar ? 'إضافات اختيارية: ' : 'Optional add-ons: '}{p.addOns.map((a) => `${localized(a.name, lang)} (${formatMoney(a.price, p.currency)})`).join('، ')}</p>}
+                {p.terms && <p className="small muted">{ar ? 'شروط الباقة: ' : 'Package terms: '}{localized(p.terms, lang)}</p>}
               </div>
             ))}
+          </div>
+        )}
+        {s.latitude != null && s.longitude != null && (
+          <div className="card" data-testid="service-map">
+            <h2>{ar ? 'الموقع' : 'Location'}</h2>
+            <iframe className="map-embed" title={ar ? 'الخريطة' : 'Map'} loading="lazy" referrerPolicy="no-referrer" style={{ height: 280 }}
+              src={`https://www.openstreetmap.org/export/embed.html?bbox=${s.longitude - 0.006},${s.latitude - 0.006},${s.longitude + 0.006},${s.latitude + 0.006}&layer=mapnik&marker=${s.latitude},${s.longitude}`} />
+            <div className="row gap wrap" style={{ marginTop: 10, justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="muted">{[s.address, s.city].filter(Boolean).join('، ')}</span>
+              <a className="btn btn-secondary" href={`https://www.google.com/maps/search/?api=1&query=${s.latitude},${s.longitude}`} target="_blank" rel="noopener noreferrer">{ar ? 'افتح في الخرائط' : 'Open in maps'}</a>
+            </div>
           </div>
         )}
         <div className="card">

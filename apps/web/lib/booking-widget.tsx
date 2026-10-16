@@ -7,19 +7,19 @@ import { useApp, useGet, useSession, useTr } from '@events/web-kit/client';
 import { Button, ErrorBox, Notice } from '@events/web-kit/ui';
 
 export interface PublicService {
-  id: string; title: Record<string, string>; description: Record<string, string>; terms: Record<string, string> | null; city: string; countryCode: string;
+  id: string; title: Record<string, string>; description: Record<string, string>; terms: Record<string, string> | null; city: string; countryCode: string; address?: string | null; latitude?: number | null; longitude?: number | null;
   basePrice: string; currency: string; pricingUnit: string; durationMinutes: number | null; capacity: number | null; requiresProviderApproval: boolean;
   depositType: string; depositValue: string; typeName: Record<string, string>; bookingMode: 'time_slot' | 'full_day' | 'date_range' | 'quantity_rental'; capacityMode: string;
-  providerName: string | null; attributes: Record<string, unknown>;
+  providerName: string | null; providerId: string | null; attributes: Record<string, unknown>;
   fields: { key: string; label: Record<string, string>; dataType: string; options: { value: string; label: Record<string, string> }[] }[];
   cancellationPolicy: { description: Record<string, string>; tiers: { hoursBefore: number; refundPercentOfPaid: number }[]; depositRefundable: boolean } | null;
-  packages: { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; inclusions: unknown[]; addOns: { code: string; name: Record<string, string>; price: string }[] }[];
+  packages: { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; inclusions: unknown[]; addOns: { code: string; name: Record<string, string>; price: string }[]; durationMinutes: number | null; terms: Record<string, string> | null }[];
   rentalItems: { id: string; name: Record<string, string>; quantityTotal: number; pricePerDay: string; currency: string; securityDeposit: string | null }[];
-  media: { id: string; kind: string; caption: Record<string, string> | null; url: string }[];
+  media: { id: string; kind: string; caption: Record<string, string> | null; packageId: string | null; url: string }[];
   rating: { average: string | null; count: number };
 }
 type Day = { date: string; open: boolean; available: boolean; slots?: { start: string; end: string; available: boolean }[] };
-type Quote = { subtotal: string; total: string; upfrontAmount: string; balanceDueAt: string | null; currency: string; addOns: { code: string; price: string }[]; securityDepositAmount?: string };
+type Quote = { subtotal: string; total: string; upfrontAmount: string; balanceDueAt: string | null; instalments?: { seq: number; amount: string; dueAt: string }[] | null; currency: string; addOns: { code: string; price: string }[]; securityDepositAmount?: string };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const addDays = (d: string, n: number) => iso(new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000));
@@ -132,7 +132,10 @@ export function BookingWidget({ service: s }: { service: PublicService }) {
           <dl className="detail" style={{ gridTemplateColumns: '1fr' }}>
             <div className="detail-row"><dt>{tr({ ar: 'الإجمالي', en: 'Total' })}</dt><dd className="price num" dir="ltr">{formatMoney(quote.total, quote.currency)}</dd></div>
             <div className="detail-row"><dt>{tr({ ar: 'المطلوب عند الحجز', en: 'Due when booking' })}</dt><dd className="num" dir="ltr">{formatMoney(quote.upfrontAmount, quote.currency)}</dd></div>
-            {quote.balanceDueAt && quote.upfrontAmount !== quote.total && <div className="detail-row"><dt>{tr({ ar: 'المتبقي يُستحق في', en: 'Balance due on' })}</dt><dd>{formatDate(quote.balanceDueAt, lang)}</dd></div>}
+            {quote.instalments?.map((i) => (
+              <div key={i.seq} className="detail-row"><dt>{tr({ ar: 'القسط', en: 'Instalment' })} {i.seq} · {formatDate(i.dueAt, lang)}</dt><dd className="num" dir="ltr">{formatMoney(i.amount, quote.currency)}</dd></div>
+            ))}
+            {!quote.instalments?.length && quote.balanceDueAt && quote.upfrontAmount !== quote.total && <div className="detail-row"><dt>{tr({ ar: 'المتبقي يُستحق في', en: 'Balance due on' })}</dt><dd>{formatDate(quote.balanceDueAt, lang)}</dd></div>}
           </dl>
           <Notice>{tr({ ar: 'لا رسوم إضافية. يُحجز الموعد مؤقتًا عند إتمام الطلب حتى تدفع.', en: 'No extra fees. The slot is held temporarily when you place the order, until you pay.' })}</Notice>
           <Button variant="primary" disabled={busy} onClick={add}>{tr({ ar: 'أضف إلى السلة', en: 'Add to cart' })}</Button>

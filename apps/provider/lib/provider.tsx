@@ -1,4 +1,5 @@
 'use client';
+import { Bell, KeyRound, Briefcase, CalendarCheck, CalendarDays, ChartColumn, CircleHelp, ClipboardCheck, FileText, HandCoins, LayoutDashboard, MessageSquareWarning, Package, ShieldCheck, Star, TicketPercent } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -23,27 +24,30 @@ export function useProvider() {
 
 export const NAV: NavGroup[] = [
   { label: { ar: 'عام', en: 'General' }, items: [
-    { href: '/', label: { ar: 'لوحة المتابعة', en: 'Dashboard' } },
-    { href: '/notifications', label: { ar: 'الإشعارات', en: 'Notifications' } },
+    { href: '/', label: { ar: 'لوحة المتابعة', en: 'Dashboard' }, icon: LayoutDashboard },
+    { href: '/notifications', label: { ar: 'الإشعارات', en: 'Notifications' }, icon: Bell },
+    { href: '/help', label: { ar: 'المساعدة', en: 'Help' }, icon: CircleHelp },
   ] },
   { label: { ar: 'خدماتي', en: 'My services' }, items: [
-    { href: '/services', label: { ar: 'الخدمات والباقات', en: 'Services & packages' } },
-    { href: '/calendar', label: { ar: 'التقويم والتوافر', en: 'Calendar & availability' } },
-    { href: '/policies', label: { ar: 'سياسات الإلغاء', en: 'Cancellation policies' } },
-    { href: '/promotions', label: { ar: 'العروض', en: 'Promotions' } },
-    { href: '/reviews', label: { ar: 'التقييمات', en: 'Reviews' } },
+    { href: '/services', label: { ar: 'الخدمات والباقات', en: 'Services & packages' }, icon: Package },
+    { href: '/calendar', label: { ar: 'التقويم والتوافر', en: 'Calendar & availability' }, icon: CalendarDays },
+    { href: '/policies', label: { ar: 'سياسات الإلغاء', en: 'Cancellation policies' }, icon: ShieldCheck },
+    { href: '/promotions', label: { ar: 'العروض', en: 'Promotions' }, icon: TicketPercent },
+    { href: '/reviews', label: { ar: 'التقييمات', en: 'Reviews' }, icon: Star },
   ] },
   { label: { ar: 'الحجوزات', en: 'Bookings' }, items: [
-    { href: '/bookings', label: { ar: 'الحجوزات', en: 'Bookings' } },
-    { href: '/disputes', label: { ar: 'النزاعات والشكاوى', en: 'Disputes & complaints' } },
+    { href: '/bookings', label: { ar: 'الحجوزات', en: 'Bookings' }, icon: CalendarCheck },
+    { href: '/disputes', label: { ar: 'النزاعات والشكاوى', en: 'Disputes & complaints' }, icon: MessageSquareWarning },
   ] },
   { label: { ar: 'المالية', en: 'Money' }, items: [
-    { href: '/earnings', label: { ar: 'المستحقات والتسويات', en: 'Earnings & settlements' } },
-    { href: '/reports', label: { ar: 'التقارير', en: 'Reports' } },
-    { href: '/documents', label: { ar: 'المستندات', en: 'Documents' } },
+    { href: '/earnings', label: { ar: 'المستحقات والتسويات', en: 'Earnings & settlements' }, icon: HandCoins },
+    { href: '/reports', label: { ar: 'التقارير', en: 'Reports' }, icon: ChartColumn },
+    { href: '/documents', label: { ar: 'المستندات', en: 'Documents' }, icon: FileText },
   ] },
   { label: { ar: 'الحساب', en: 'Account' }, items: [
-    { href: '/onboarding', label: { ar: 'طلب التسجيل', en: 'Application' } },
+    { href: '/profile', label: { ar: 'الملف التجاري', en: 'Business profile' }, icon: Briefcase },
+    { href: '/security', label: { ar: 'أمان الحساب', en: 'Account security' }, icon: KeyRound },
+    { href: '/onboarding', label: { ar: 'طلب التسجيل', en: 'Application' }, icon: ClipboardCheck },
   ] },
 ];
 

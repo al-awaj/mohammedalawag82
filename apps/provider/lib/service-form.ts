@@ -3,19 +3,64 @@ import type { FieldSpec, Option } from '@events/web-kit/ui';
 export interface ServiceType {
   id: string; code: string; name: Record<string, string>; bookingMode: string; capacityMode: string; defaultRequiresApproval: boolean;
   defaultDurationMinutes: number | null; pricingUnits: string[]; allowsPackages: boolean; minImages: number; maxImages: number; allowsVideo: boolean;
-  depositRequired: boolean; minDepositPercent: string | null; fields: import('./fields').TypeField[];
+  depositRequired: boolean; minDepositPercent: string | null; requiredDocuments?: string[]; fields: import('./fields').TypeField[];
 }
 export interface Service {
-  id: string; serviceTypeId: string; title: Record<string, string>; description: Record<string, string>; terms: Record<string, string> | null; city: string; address: string | null;
+  id: string; serviceTypeId: string; title: Record<string, string>; description: Record<string, string>; terms: Record<string, string> | null; city: string; address: string | null; latitude: number | null; longitude: number | null;
   basePrice: string; currency: string; pricingUnit: string; durationMinutes: number | null; capacity: number | null; requiresProviderApproval: boolean;
-  depositType: string; depositValue: string; balanceDueDaysBefore: number; attributes: Record<string, unknown>; maxConcurrentBookings: number; slotStepMinutes: number | null;
+  depositType: string; depositValue: string; balanceDueDaysBefore: number; instalmentPlan: PlanStep[] | null; attributes: Record<string, unknown>; maxConcurrentBookings: number; slotStepMinutes: number | null;
   status: string; statusReason: string | null; typeName: Record<string, string>; bookingMode: string; capacityMode: string;
   cancellationPolicy: { id: string } | null; packages: Package[]; rentalItems: RentalItem[];
-  media: { id: string; kind: string; mimeType: string; caption: Record<string, string> | null; isPastWork: boolean; sortOrder: number; url: string }[];
+  media: { id: string; kind: string; mimeType: string; caption: Record<string, string> | null; isPastWork: boolean; packageId: string | null; sortOrder: number; url: string }[];
   rating: { average: string | null; count: number };
 }
-export interface Package { id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; pricingUnit: string; durationMinutes: number | null; inclusions: unknown[]; addOns: { code: string; name: Record<string, string>; price: string }[]; status: string; depositType: string | null; depositValue: string | null }
-export interface RentalItem { id: string; sku: string; name: Record<string, string>; quantityTotal: number; condition: string; pricePerDay: string; currency: string; securityDeposit: string | null; status: string }
+export interface Package {
+  id: string; name: Record<string, string>; description: Record<string, string> | null; price: string; currency: string; pricingUnit: string;
+  durationMinutes: number | null; inclusions: Record<string, string>[]; addOns: { code: string; name: Record<string, string>; price: string }[]; status: string;
+  terms: Record<string, string> | null; availableWeekdays: number[]; maxBookingsPerSlot: number; depositType: string | null; depositValue: string | null;
+  balanceDueDaysBefore: number; instalmentPlan: PlanStep[] | null; validFrom: string | null; validTo: string | null; sortOrder: number;
+}
+export interface RentalItem {
+  id: string; sku: string; name: Record<string, string>; attributes: Record<string, string | number>; quantityTotal: number; condition: string;
+  pricePerDay: string; pricePerPeriod: string | null; periodDays: number | null; currency: string; securityDeposit: string | null;
+  lateFeePerDay: string | null; damageTerms: Record<string, string> | null; status: string;
+}
+
+export type PlanStep = { percent: string; daysBefore: number };
+
+/** Instalment plan as "percent | days before" lines; it splits the balance left after the deposit. */
+export function planField(plan: PlanStep[] | null | undefined): FieldSpec {
+  return {
+    name: 'instalmentPlan', label: { ar: 'خطة الأقساط للمتبقي (اختياري): سطر لكل قسط', en: 'Instalment plan for the balance (optional): one line per instalment' }, type: 'textarea',
+    help: { ar: 'النسبة من المتبقي | عدد الأيام قبل الموعد — مثال: 60 | 90 ثم 40 | 14. مجموع النسب 100، وتتطلب عربونًا.', en: 'percent of the balance | days before the booking — e.g. 60 | 90 then 40 | 14. Percentages add up to 100; needs a deposit.' },
+    defaultValue: (plan ?? []).map((p) => `${p.percent} | ${p.daysBefore}`).join('\n'),
+  };
+}
+
+/** Parses the plan lines; empty means no plan. A malformed line is reported instead of being dropped. */
+export function parsePlan(v: unknown): PlanStep[] | null {
+  const rows = String(v ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!rows.length) return null;
+  return rows.map((l) => {
+    const [percent, days] = l.split('|').map((x) => x.trim());
+    if (!percent || !days || !/^\d+$/.test(days)) throw new Error(`Instalment line not understood: "${l}"`);
+    return { percent, daysBefore: Number(days) };
+  });
+}
+
+/** Replaces the plan text with the parsed plan and the map location with coordinates in a form body. */
+export const withPlan = (v: Record<string, unknown>) => {
+  const { location, ...rest } = v;
+  const geo = location as { lat: number; lng: number } | undefined;
+  return { ...rest, instalmentPlan: parsePlan(v.instalmentPlan), ...('location' in v || 'city' in v ? { latitude: geo?.lat ?? null, longitude: geo?.lng ?? null } : {}) };
+};
+
+/** Names of document types the starter catalog uses; other codes are shown as typed by the administration. */
+export const DOC_LABEL: Record<string, { ar: string; en: string }> = {
+  commercial_license: { ar: 'السجل أو الترخيص التجاري', en: 'Commercial licence' }, civil_defense_permit: { ar: 'تصريح الدفاع المدني', en: 'Civil defence permit' },
+  food_safety_certificate: { ar: 'شهادة سلامة الغذاء', en: 'Food safety certificate' }, vehicle_registration: { ar: 'رخصة سير المركبة', en: 'Vehicle registration' },
+};
+export const docLabel = (code: string) => DOC_LABEL[code] ?? { ar: code, en: code };
 
 const UNIT_LABEL: Record<string, { ar: string; en: string }> = {
   fixed: { ar: 'سعر ثابت', en: 'Fixed price' }, per_hour: { ar: 'بالساعة', en: 'Per hour' }, per_day: { ar: 'باليوم', en: 'Per day' },
@@ -29,6 +74,8 @@ export function serviceFields(type: ServiceType, s: Partial<Service> | undefined
     { name: 'terms', label: { ar: 'شروط الخدمة', en: 'Service terms' }, type: 'i18n', defaultValue: s?.terms ?? undefined },
     { name: 'city', label: { ar: 'المدينة', en: 'City' }, required: true, defaultValue: s?.city },
     { name: 'address', label: { ar: 'العنوان', en: 'Address' }, defaultValue: s?.address ?? undefined },
+    { name: 'location', label: { ar: 'الموقع على الخريطة', en: 'Location on the map' }, type: 'geo', defaultValue: { lat: s?.latitude, lng: s?.longitude },
+      help: { ar: 'الصق الإحداثيات أو رابط الموقع من خرائط Google، أو استخدم موقعك الحالي. يظهر للعملاء على الخريطة ويُستخدم في البحث القريب.', en: 'Paste coordinates or a Google Maps link, or use your current location. Customers see it on a map and it powers nearby search.' } },
     { name: 'basePrice', label: { ar: 'السعر', en: 'Price' }, type: 'decimal', required: true, defaultValue: s?.basePrice },
     { name: 'currency', label: { ar: 'العملة', en: 'Currency' }, type: 'select', required: true, options: currencies, defaultValue: s?.currency },
     { name: 'pricingUnit', label: { ar: 'طريقة التسعير', en: 'Pricing unit' }, type: 'select', required: true, defaultValue: s?.pricingUnit ?? type.pricingUnits[0],
@@ -45,6 +92,7 @@ export function serviceFields(type: ServiceType, s: Partial<Service> | undefined
     { name: 'depositValue', label: { ar: 'قيمة العربون', en: 'Deposit value' }, type: 'decimal', defaultValue: s?.depositValue,
       help: type.minDepositPercent ? { ar: `الحد الأدنى ${type.minDepositPercent}%`, en: `Minimum ${type.minDepositPercent}%` } : undefined },
     { name: 'balanceDueDaysBefore', label: { ar: 'استحقاق المتبقي قبل الموعد بـ (أيام)', en: 'Balance due (days before)' }, type: 'number', defaultValue: s?.balanceDueDaysBefore ?? 7 },
+    planField(s?.instalmentPlan),
     { name: 'cancellationPolicyId', label: { ar: 'سياسة الإلغاء', en: 'Cancellation policy' }, type: 'select', options: policies, defaultValue: s?.cancellationPolicy?.id },
   ];
 }

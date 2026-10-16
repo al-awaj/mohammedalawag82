@@ -6,6 +6,7 @@ import type { Permission } from '../../auth/permissions.js';
 import { AppError, badRequest, forbidden, notFound } from '../../lib/errors.js';
 import { i18nTextSchema } from '../common.js';
 import type { DataType, FieldDef } from './fields.js';
+import { instalmentPlanInput } from '../booking/pricing.js';
 
 export const PRICING_UNITS = ['fixed', 'per_hour', 'per_day', 'per_person', 'per_unit'] as const;
 export const moneySchema = z.string().regex(/^\d{1,16}(\.\d{1,4})?$/, 'non-negative decimal string with up to 4 decimals, e.g. "1500.00"');
@@ -15,7 +16,14 @@ export const depositFields = {
   depositType: z.enum(['none', 'fixed', 'percent']),
   depositValue: moneySchema,
   balanceDueDaysBefore: z.number().int().min(0).max(365),
+  /** Splits the balance into dated instalments (clause 46); needs a deposit, since without one everything is paid upfront. */
+  instalmentPlan: instalmentPlanInput.nullable(),
 };
+
+/** A plan only applies to the balance after a deposit. */
+export function assertPlanShape(depositType: string, plan: unknown[] | null | undefined) {
+  if (plan?.length && depositType === 'none') throw badRequest('VALIDATION_FAILED', [{ path: '/instalmentPlan', message: 'an instalment plan needs a deposit' }]);
+}
 
 export interface ProviderRow {
   id: string;
@@ -52,6 +60,8 @@ export interface TypeRow {
   min_deposit_percent: string | null;
   provider_can_create: boolean;
   is_active: boolean;
+  required_documents: string[];
+  default_cancellation_policy_id: string | null;
 }
 
 export async function loadType(exec: Executor, id: string): Promise<TypeRow> {

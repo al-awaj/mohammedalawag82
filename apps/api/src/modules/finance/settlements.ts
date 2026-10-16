@@ -2,7 +2,8 @@ import type { Executor } from '../../db/pool.js';
 import { audit, type ActorContext } from '../../lib/audit.js';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/errors.js';
 import { fromUnits, percentOf, toUnits } from '../../lib/money.js';
-import { enqueueMessage } from '../../lib/outbox.js';
+import { notifyUser } from '../../lib/notify.js';
+import { earningNotice } from './earnings.js';
 import { post, systemAccount } from './ledger.js';
 import { issueSettlementNote } from '../documents/service.js';
 
@@ -42,6 +43,7 @@ async function earningStatus(c: Executor, earningId: string, to: string, ctx: Ac
   if (from === to) return;
   await c.query('UPDATE provider_earnings SET status = $2, status_reason = $3 WHERE id = $1', [earningId, to, reason]);
   await c.query('INSERT INTO provider_earning_events (earning_id, from_status, to_status, actor_id, reason) VALUES ($1, $2, $3, $4, $5)', [earningId, from, to, ctx.actorId, reason]);
+  await earningNotice(c, earningId, to);
 }
 
 export interface CreateSettlementInput {
@@ -136,9 +138,8 @@ export async function markSettlementPaid(c: Executor, id: string, externalRef: s
   await recordStatus(c, id, s.status, 'paid', ctx, null);
   await audit(c, ctx, { action: 'settlement.paid', entityType: 'settlement', entityId: id, after: { externalRef, amount: s.amount } });
   await issueSettlementNote(c, id);
-  const u = (await c.query<{ id: string; phone: string | null; preferred_language: string }>(
-    'SELECT u.id, u.phone, u.preferred_language FROM providers p JOIN users u ON u.id = p.user_id WHERE p.id = $1', [s.provider_id])).rows[0]!;
-  if (u.phone) await enqueueMessage(c, { channel: 'sms', recipientUserId: u.id, target: u.phone, templateKey: 'settlement.paid', language: u.preferred_language, payload: { settlementId: id, number: s.number, amount: s.amount } });
+  const uid = (await c.query<{ user_id: string }>('SELECT user_id FROM providers WHERE id = $1', [s.provider_id])).rows[0]!.user_id;
+  await notifyUser(c, uid, 'settlement.paid', { settlementId: id, number: s.number, amount: s.amount });
 }
 
 /** Failure or cancellation releases the earnings so they can be settled again (clause 43: failed / re-reviewed). */
@@ -152,4 +153,8 @@ export async function closeSettlementUnpaid(c: Executor, id: string, to: 'failed
   if (s.kind === 'regular') for (const i of items) await earningStatus(c, i.earning_id, to === 'failed' ? 'settlement_failed' : 'due', ctx, reason);
   await recordStatus(c, id, s.status, to, ctx, reason);
   await audit(c, ctx, { action: `settlement.${to}`, entityType: 'settlement', entityId: id, reason });
+  if (to === 'failed') {
+    const uid = (await c.query<{ user_id: string }>('SELECT user_id FROM providers WHERE id = $1', [s.provider_id])).rows[0]!.user_id;
+    await notifyUser(c, uid, 'settlement.failed', { settlementId: id, number: s.number, amount: s.amount, reason });
+  }
 }

@@ -1,13 +1,14 @@
+import { notifyUser } from '../../lib/notify.js';
 import type pg from 'pg';
 import { withTx, type Db, type Executor } from '../../db/pool.js';
 import { audit, systemActor, type ActorContext } from '../../lib/audit.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../lib/errors.js';
 import { fromUnits, toUnits } from '../../lib/money.js';
-import { enqueueMessage } from '../../lib/outbox.js';
 import { confirmHold, releaseBlock, reserve } from '../availability/engine.js';
 import { currentTerms } from '../auth/service.js';
 import { getSetting } from '../settings/registry.js';
 import { quote, type ItemInput, type Quote } from './pricing.js';
+import { attachContract } from '../documents/contracts.js';
 import { computeCommission } from '../finance/commission.js';
 import { evaluateCoupon } from '../promotions/service.js';
 import { onBookingCompleted } from '../finance/earnings.js';
@@ -35,12 +36,7 @@ export async function lockBooking(c: Executor, id: string): Promise<BookingRow> 
 }
 
 export async function notify(c: Executor, userId: string, templateKey: string, payload: Record<string, unknown>) {
-  const u = (await c.query<{ phone: string | null; email: string | null; preferred_language: string }>(
-    'SELECT phone, email, preferred_language FROM users WHERE id = $1', [userId])).rows[0];
-  if (!u) return;
-  const target = u.phone ?? u.email;
-  if (!target) return;
-  await enqueueMessage(c, { channel: u.phone ? 'sms' : 'email', recipientUserId: userId, target, templateKey, language: u.preferred_language, payload });
+  await notifyUser(c, userId, templateKey, payload);
 }
 
 async function providerUserId(c: Executor, providerId: string): Promise<string> {
@@ -158,7 +154,7 @@ export async function viewCart(db: Db, customerId: string) {
         start: r.start_at, end: r.end_at, units: r.units, guests: r.guests, addOns: q?.addOns ?? r.add_ons, notes: r.notes,
         serviceTitle: q?.serviceTitle ?? null, packageName: q?.packageName ?? null,
         quotedTotal: r.quoted_total, currentTotal: q?.total ?? null, currency: q?.currency ?? r.currency_code.trim(),
-        upfrontAmount: q?.upfrontAmount ?? null, balanceDueAt: q?.balanceDueAt ?? null, requiresProviderApproval: q?.requiresProviderApproval ?? null,
+        upfrontAmount: q?.upfrontAmount ?? null, balanceDueAt: q?.balanceDueAt ?? null, instalments: q?.instalments ?? null, requiresProviderApproval: q?.requiresProviderApproval ?? null,
         cancellationPolicy: q?.cancellationPolicy ?? null, state, problem,
       });
     }
@@ -178,7 +174,7 @@ export async function viewCart(db: Db, customerId: string) {
   }
 }
 
-async function assertOwnEvent(c: Executor, customerId: string, eventId: string) {
+export async function assertOwnEvent(c: Executor, customerId: string, eventId: string) {
   const e = await c.query(`SELECT 1 FROM events WHERE id = $1 AND customer_id = $2 AND status <> 'cancelled'`, [eventId, customerId]);
   if (!e.rowCount) throw badRequest('EVENT_NOT_FOUND');
 }
@@ -283,8 +279,8 @@ export async function checkout(db: Db, customerId: string, opts: { itemIds?: str
              units, guests, calendar_block_id, service_title, package_name, pricing_unit, unit_price, quantity_factor, add_ons, subtotal, total,
              currency_code, deposit_type, deposit_value, upfront_amount, balance_due_at, security_deposit_amount, cancellation_policy, terms_snapshot,
              requires_provider_approval, status, hold_expires_at, approval_deadline, customer_notes,
-             promotion_id, discount_amount, discount_platform_borne, discount_provider_borne)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39)
+             promotion_id, discount_amount, discount_platform_borne, discount_provider_borne, instalment_plan)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
            RETURNING id, number`,
           [bookingId, order.id, customerId, q.providerId, q.serviceId, q.packageId, q.rentalItemId, row.event_id, countryId, q.start, q.end,
             q.units, q.guests, block.id, JSON.stringify(q.serviceTitle), q.packageName ? JSON.stringify(q.packageName) : null, q.pricingUnit,
@@ -292,13 +288,15 @@ export async function checkout(db: Db, customerId: string, opts: { itemIds?: str
             q.balanceDueAt, q.securityDepositAmount, q.cancellationPolicy ? JSON.stringify(q.cancellationPolicy) : null,
             JSON.stringify(q.termsSnapshot), q.requiresProviderApproval, status, block.expiresAt,
             q.requiresProviderApproval ? block.expiresAt : null, row.notes,
-            toUnits(q.discountAmount) > 0n ? promotionId : null, q.discountAmount, q.discountPlatformBorne, q.discountProviderBorne])).rows[0]!;
+            toUnits(q.discountAmount) > 0n ? promotionId : null, q.discountAmount, q.discountPlatformBorne, q.discountProviderBorne,
+            q.instalments ? JSON.stringify(q.instalments) : null])).rows[0]!;
         if (toUnits(q.discountAmount) > 0n) {
           await c.query('INSERT INTO promotion_redemptions (promotion_id, order_id, booking_id, customer_id, discount_amount) VALUES ($1, $2, $3, $4, $5)',
             [promotionId, order.id, b.id, customerId, q.discountAmount]);
         }
         await c.query(`INSERT INTO booking_status_events (booking_id, from_status, to_status, actor_id, actor_kind) VALUES ($1, NULL, $2, $3, 'customer')`,
           [b.id, status, customerId]);
+        await attachContract(c, b.id, countryId);
         // Commission rule and amount are fixed at booking time; later rule changes never touch it (clause 40).
         // Base = price minus what the provider gives up; a platform-borne discount does not cut the provider's commission base.
         const commissionBase = fromUnits(toUnits(q.total) + toUnits(q.discountPlatformBorne));
@@ -324,7 +322,7 @@ export async function checkout(db: Db, customerId: string, opts: { itemIds?: str
 }
 
 /** Notifies the customer once an event's committed cost passes its budget (same currency only). */
-async function checkEventBudget(c: Executor, eventIds: string[]) {
+export async function checkEventBudget(c: Executor, eventIds: string[]) {
   for (const id of eventIds) {
     const r = (await c.query<{ customer_id: string; over: boolean; name: string }>(
       `SELECT e.customer_id, e.name, coalesce((SELECT sum(b.total) FROM bookings b WHERE b.event_id = e.id AND b.currency_code = e.budget_currency

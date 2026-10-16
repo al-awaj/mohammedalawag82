@@ -7,11 +7,12 @@ import { formatDate, formatDateTime, localized } from '@events/shared';
 import { useAction, useApp, useGet, useTr } from '@events/web-kit/client';
 import { Button, Card, Empty, ErrorBox, Loading, Money, Notice, Page } from '@events/web-kit/ui';
 import { RequireCustomer } from '@/lib/account';
+import { EventPicker } from '@/lib/events';
 
 type Item = {
   id: string; serviceId: string; start: string; end: string; guests: number | null; serviceTitle: Record<string, string> | null; packageName: Record<string, string> | null;
   quotedTotal: string; currentTotal: string | null; currency: string; upfrontAmount: string | null; balanceDueAt: string | null; requiresProviderApproval: boolean | null;
-  cancellationPolicy: { description: Record<string, string> } | null; state: string; problem: string | null;
+  cancellationPolicy: { description: Record<string, string> } | null; state: string; problem: string | null; eventId: string | null;
 };
 type Coupon = { totalDiscount: string; items: { itemId: string; discount: string; totalAfterDiscount: string; currency: string }[] };
 
@@ -66,6 +67,7 @@ function Cart() {
                 </div>
               )}
               {i.cancellationPolicy && <p className="small muted">{tr({ ar: 'سياسة الإلغاء:', en: 'Cancellation policy:' })} {localized(i.cancellationPolicy.description, lang)}</p>}
+              <EventPicker value={i.eventId} path={`/v1/cart/items/${i.id}`} testId={`cart-event-${i.id}`} />
             </Card>
           );
         })}

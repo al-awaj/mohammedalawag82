@@ -3,7 +3,9 @@ import type { App, Deps } from '../../deps.js';
 import { actorOf, can, countryScope, requireKind, requirePermission, requireUser } from '../../auth/guard.js';
 import { audit } from '../../lib/audit.js';
 import { getSetting } from '../settings/registry.js';
-import { badRequest, notFound } from '../../lib/errors.js';
+import { badRequest, conflict, forbidden, mapUniqueViolation, notFound } from '../../lib/errors.js';
+import { notifyUser } from '../../lib/notify.js';
+import { withTx } from '../../db/pool.js';
 import { emailSchema, idParams, paginationQuery, phoneSchema, reasonSchema } from '../common.js';
 import { ProviderApplicationService, STAFF_TRANSITIONS, type StaffAction } from './service.js';
 
@@ -116,6 +118,84 @@ export async function providerRoutes(app: App, deps: Deps) {
     return p;
   });
 
+  /** Day-to-day details an approved provider keeps up to date directly; every change is audited. */
+  app.patch('/provider/me', {
+    ...providerOnly,
+    schema: {
+      tags: ['provider-panel'], security: [{ bearer: [] }],
+      body: z.object({
+        city: fields.shape.city, address: fields.shape.address, description: fields.shape.description,
+        latitude: fields.shape.latitude, longitude: fields.shape.longitude,
+      }).partial().refine((b) => Object.keys(b).length > 0, 'nothing to change'),
+    },
+  }, async (req) => {
+    const b = req.body;
+    return withTx(db, async (c) => {
+      const before = (await c.query('SELECT id, city, address, description, latitude, longitude, status FROM providers WHERE user_id = $1 FOR UPDATE', [requireUser(req).id])).rows[0];
+      if (!before) throw notFound();
+      if (before.status !== 'active') throw conflict('INVALID_STATUS', { status: before.status });
+      const lat = b.latitude !== undefined ? b.latitude : before.latitude;
+      const lng = b.longitude !== undefined ? b.longitude : before.longitude;
+      if ((lat === null) !== (lng === null)) throw badRequest('VALIDATION_FAILED', [{ path: '/latitude', message: 'latitude and longitude go together' }]);
+      const has = (k: string) => Object.hasOwn(b, k);
+      await c.query(
+        `UPDATE providers SET city = coalesce($2, city), address = CASE WHEN $3 THEN $4 ELSE address END,
+           description = CASE WHEN $5 THEN $6 ELSE description END, latitude = $7, longitude = $8 WHERE id = $1`,
+        [before.id, b.city ?? null, has('address'), b.address ?? null, has('description'), b.description ?? null, lat, lng]);
+      const { id: _i, status: _s, ...prev } = before;
+      await audit(c, actorOf(req), { action: 'provider.profile_updated', entityType: 'provider', entityId: before.id, before: prev, after: b });
+      return { ok: true };
+    });
+  });
+
+  /** Name, activity and payout details change only after the administration approves (clause 7). */
+  const changeFields = z.object({
+    businessName: fields.shape.businessName, activityType: fields.shape.activityType,
+    payoutDetails: z.record(z.string(), z.unknown()),
+  }).partial();
+  app.post('/provider/me/change-requests', {
+    ...providerOnly,
+    schema: {
+      tags: ['provider-panel'], security: [{ bearer: [] }],
+      body: z.object({ changes: changeFields.refine((x) => Object.keys(x).length > 0, 'nothing to change'), note: z.string().trim().max(1000).nullish() }),
+    },
+  }, async (req, reply) => {
+    const user = requireUser(req);
+    const id = await withTx(db, async (c) => {
+      const p = (await c.query<{ id: string; status: string }>('SELECT id, status FROM providers WHERE user_id = $1', [user.id])).rows[0];
+      if (!p) throw notFound();
+      if (p.status !== 'active') throw conflict('INVALID_STATUS', { status: p.status });
+      const row = await c.query<{ id: string }>(
+        `INSERT INTO provider_profile_changes (provider_id, changes, note, requested_by) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [p.id, JSON.stringify(req.body.changes), req.body.note ?? null, user.id]).catch((e) => mapUniqueViolation(e, { provider_profile_changes_open: 'CHANGE_REQUEST_PENDING' }));
+      // Payout details are sensitive: the audit trail records that they changed, not their content.
+      await audit(c, actorOf(req), { action: 'provider.change_requested', entityType: 'provider', entityId: p.id,
+        after: { requestId: row.rows[0]!.id, fields: Object.keys(req.body.changes) } });
+      return row.rows[0]!.id;
+    });
+    return reply.status(201).send({ id });
+  });
+
+  app.get('/provider/me/change-requests', { ...providerOnly, schema: { tags: ['provider-panel'], security: [{ bearer: [] }] } }, async (req) => {
+    return (await db.query(
+      `SELECT r.id, r.changes, r.note, r.status, r.decision_reason AS "decisionReason", r.decided_at AS "decidedAt", r.created_at AS "createdAt"
+         FROM provider_profile_changes r JOIN providers p ON p.id = r.provider_id WHERE p.user_id = $1 ORDER BY r.created_at DESC`,
+      [requireUser(req).id])).rows;
+  });
+
+  app.post('/provider/me/change-requests/:id/withdraw', { ...providerOnly, schema: { tags: ['provider-panel'], security: [{ bearer: [] }], params: idParams } }, async (req) => {
+    return withTx(db, async (c) => {
+      const r = (await c.query<{ id: string; status: string; provider_id: string }>(
+        `SELECT r.id, r.status, r.provider_id FROM provider_profile_changes r JOIN providers p ON p.id = r.provider_id
+          WHERE r.id = $1 AND p.user_id = $2 FOR UPDATE OF r`, [req.params.id, requireUser(req).id])).rows[0];
+      if (!r) throw notFound();
+      if (r.status !== 'pending') throw conflict('INVALID_STATUS', { status: r.status });
+      await c.query(`UPDATE provider_profile_changes SET status = 'withdrawn', decided_at = now() WHERE id = $1`, [r.id]);
+      await audit(c, actorOf(req), { action: 'provider.change_withdrawn', entityType: 'provider', entityId: r.provider_id, after: { requestId: r.id } });
+      return { ok: true };
+    });
+  });
+
   // ---------------- Staff review ----------------
   app.get('/admin/provider-applications', {
     onRequest: deps.authenticate, preValidation: requirePermission('provider_applications.view'),
@@ -195,5 +275,69 @@ export async function providerRoutes(app: App, deps: Deps) {
       [scope, req.query.status ?? null, req.query.q ?? null, req.query.limit, req.query.offset],
     );
     return { total: Number(rows[0]?.total ?? 0), items: rows.map(({ total: _t, ...r }) => r) };
+  });
+
+  // ---------------- Profile change requests (staff) ----------------
+  app.get('/admin/provider-change-requests', {
+    onRequest: deps.authenticate, preValidation: requirePermission('providers.view'),
+    schema: { tags: ['admin:providers'], security: [{ bearer: [] }], querystring: paginationQuery.extend({ status: z.enum(['pending', 'approved', 'rejected', 'withdrawn']).optional() }) },
+  }, async (req) => {
+    const user = requireUser(req);
+    const scope = countryScope(user, 'providers.view');
+    const { rows } = await db.query(
+      `SELECT r.id, r.provider_id AS "providerId", p.business_name AS "businessName", p.activity_type AS "activityType", c.code AS "countryCode",
+              p.country_id AS "countryId", r.changes, r.note, r.status, r.decision_reason AS "decisionReason", d.full_name AS "decidedBy",
+              r.decided_at AS "decidedAt", r.created_at AS "createdAt", count(*) OVER() AS total
+         FROM provider_profile_changes r JOIN providers p ON p.id = r.provider_id JOIN countries c ON c.id = p.country_id
+         LEFT JOIN users d ON d.id = r.decided_by
+        WHERE ($1::uuid[] IS NULL OR p.country_id = ANY($1)) AND ($2::text IS NULL OR r.status = $2)
+        ORDER BY r.created_at DESC LIMIT $3 OFFSET $4`,
+      [scope, req.query.status ?? null, req.query.limit, req.query.offset]);
+    return {
+      total: Number(rows[0]?.total ?? 0),
+      items: rows.map(({ total: _t, countryId, ...r }) => {
+        // Payout details are shown only to staff allowed to see sensitive provider data.
+        if (r.changes.payoutDetails !== undefined && !can(user, 'providers.view_sensitive', countryId)) r.changes = { ...r.changes, payoutDetails: '***' };
+        return r;
+      }),
+    };
+  });
+
+  app.post('/admin/provider-change-requests/:id/:decision', {
+    onRequest: deps.authenticate, preValidation: requirePermission('providers.manage'),
+    schema: {
+      tags: ['admin:providers'], security: [{ bearer: [] }],
+      params: z.object({ id: z.uuid(), decision: z.enum(['approve', 'reject']) }), body: z.object({ reason: reasonSchema.optional() }).nullish(),
+    },
+  }, async (req) => {
+    const user = requireUser(req);
+    const { decision } = req.params;
+    const reason = req.body?.reason ?? null;
+    if (decision === 'reject' && !reason) throw badRequest('REASON_REQUIRED');
+    return withTx(db, async (c) => {
+      const r = (await c.query<{ id: string; status: string; provider_id: string; country_id: string; user_id: string; changes: Record<string, unknown> }>(
+        `SELECT r.id, r.status, r.provider_id, r.changes, p.country_id, p.user_id FROM provider_profile_changes r JOIN providers p ON p.id = r.provider_id
+          WHERE r.id = $1 FOR UPDATE OF r`, [req.params.id])).rows[0];
+      if (!r || !can(user, 'providers.manage', r.country_id)) throw notFound();
+      if (r.status !== 'pending') throw conflict('INVALID_STATUS', { status: r.status });
+      if ('payoutDetails' in r.changes && !can(user, 'providers.view_sensitive', r.country_id)) throw forbidden('PERMISSION_DENIED');
+      const status = decision === 'approve' ? 'approved' : 'rejected';
+      await c.query(`UPDATE provider_profile_changes SET status = $2, decided_by = $3, decided_at = now(), decision_reason = $4 WHERE id = $1`,
+        [r.id, status, user.id, reason]);
+      let before: Record<string, unknown> | undefined;
+      if (status === 'approved') {
+        const ch = r.changes as { businessName?: string; activityType?: string; payoutDetails?: unknown };
+        before = (await c.query('SELECT business_name AS "businessName", activity_type AS "activityType" FROM providers WHERE id = $1 FOR UPDATE', [r.provider_id])).rows[0];
+        await c.query(
+          `UPDATE providers SET business_name = coalesce($2, business_name), activity_type = coalesce($3, activity_type),
+             payout_details = CASE WHEN $4 THEN $5::jsonb ELSE payout_details END WHERE id = $1`,
+          [r.provider_id, ch.businessName ?? null, ch.activityType ?? null, ch.payoutDetails !== undefined, ch.payoutDetails !== undefined ? JSON.stringify(ch.payoutDetails) : null]);
+      }
+      const shown = Object.fromEntries(Object.entries(r.changes).map(([k, v]) => [k, k === 'payoutDetails' ? '(changed)' : v]));
+      await audit(c, actorOf(req), { action: `provider.change_${status}`, entityType: 'provider', entityId: r.provider_id, reason,
+        before, after: { requestId: r.id, ...(status === 'approved' ? shown : {}) } });
+      await notifyUser(c, r.user_id, 'provider.profile_change_decided', { status, reason: reason ?? '' });
+      return { ok: true, status };
+    });
   });
 }

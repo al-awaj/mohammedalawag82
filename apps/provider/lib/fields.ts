@@ -7,7 +7,7 @@ export interface TypeField {
 }
 const KIND: Record<string, FieldSpec['type']> = {
   text: 'text', textarea: 'textarea', url: 'text', i18n_text: 'i18n', number: 'number', integer: 'number', boolean: 'checkbox',
-  select: 'select', multiselect: 'multiselect', date: 'date',
+  select: 'select', multiselect: 'multiselect', date: 'date', time: 'time', location: 'geo',
 };
 const bi = (o: Record<string, string> | null | undefined) => (o ? { ar: o.ar ?? o.en ?? '', en: o.en ?? o.ar ?? '' } : undefined);
 

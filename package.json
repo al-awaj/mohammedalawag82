@@ -13,7 +13,9 @@
     "dev:admin": "npm --workspace apps/admin run dev",
     "dev:provider": "npm --workspace apps/provider run dev",
     "dev:web": "npm --workspace apps/web run dev",
-    "test:e2e": "npm --workspace e2e test"
+    "test:e2e": "npm --workspace e2e test",
+    "start:local": "node scripts/start-local.mjs",
+    "build:web": "npm run build -w apps/admin -w apps/provider -w apps/web"
   },
   "engines": {
     "node": ">=22"

@@ -91,7 +91,23 @@ export const ENUMS: Record<string, Dict> = {
   user: {
     active: { ar: 'نشط', en: 'Active' }, disabled: { ar: 'معطل', en: 'Disabled' },
   },
+  eventType: {
+    wedding: { ar: 'زفاف', en: 'Wedding' }, engagement: { ar: 'خطوبة', en: 'Engagement' }, birthday: { ar: 'عيد ميلاد', en: 'Birthday' },
+    graduation: { ar: 'تخرج', en: 'Graduation' }, success: { ar: 'حفل نجاح', en: 'Success celebration' }, family: { ar: 'مناسبة عائلية', en: 'Family occasion' },
+    conference: { ar: 'مؤتمر', en: 'Conference' }, official: { ar: 'مناسبة رسمية', en: 'Official occasion' }, religious: { ar: 'مناسبة دينية', en: 'Religious occasion' },
+    social: { ar: 'مناسبة اجتماعية', en: 'Social occasion' }, other: { ar: 'أخرى', en: 'Other' },
+  },
+  event: {
+    planning: { ar: 'قيد التخطيط', en: 'Planning' }, confirmed: { ar: 'مؤكدة', en: 'Confirmed' }, completed: { ar: 'منتهية', en: 'Completed' }, cancelled: { ar: 'ملغاة', en: 'Cancelled' },
+  },
+  reschedule: {
+    pending: { ar: 'بانتظار الرد', en: 'Awaiting answer' }, approved: { ar: 'تمت الموافقة', en: 'Approved' }, rejected: { ar: 'مرفوض', en: 'Declined' },
+    withdrawn: { ar: 'مسحوب', en: 'Withdrawn' }, expired: { ar: 'انتهت المهلة', en: 'Expired' },
+  },
 };
+
+export const EVENT_TYPES = Object.keys(ENUMS.eventType!);
+export const EVENT_STATUSES = Object.keys(ENUMS.event!);
 
 /** Label for an enumeration value; unknown values are shown as received rather than hidden. */
 export function enumLabel(group: string, value: string | null | undefined, lang: Lang): string {

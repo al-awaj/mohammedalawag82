@@ -4,7 +4,7 @@ import { uiLogin } from './helpers';
 
 const ADMIN = `http://localhost:${E2E.adminPort}`;
 const PAGES = [
-  '/', '/applications', '/providers', '/services', '/catalog', '/policies', '/bookings', '/calendar', '/cancellation-requests', '/disputes',
+  '/', '/applications', '/providers', '/provider-changes', '/help', '/services', '/catalog', '/policies', '/bookings', '/events', '/calendar', '/cancellation-requests', '/disputes',
   '/reviews', '/payments', '/refunds', '/earnings', '/settlements', '/accounts', '/commissions', '/payment-settings', '/promotions',
   '/reconciliation', '/reports', '/documents', '/notifications', '/users', '/staff', '/reference', '/settings', '/audit',
 ];
@@ -23,6 +23,8 @@ test('every admin screen loads without errors for a system administrator', async
   }
   // Every report runs.
   await page.goto(`${ADMIN}/reports`);
+  // The report list arrives from the API after the page renders.
+  await expect(page.locator('select').first().locator('option')).toHaveCount(15);
   const reports = await page.locator('select').first().locator('option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
   expect(reports).toHaveLength(15);
   for (const r of reports) {

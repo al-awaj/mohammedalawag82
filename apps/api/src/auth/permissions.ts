@@ -22,6 +22,7 @@ export const PERMISSIONS = {
   'currencies.manage': { module: 'reference', ar: 'إدارة العملات', en: 'Manage currencies' },
   'exchange_rates.manage': { module: 'reference', ar: 'إدخال أسعار الصرف', en: 'Enter exchange rates' },
   'terms.manage': { module: 'reference', ar: 'نشر الشروط والسياسات', en: 'Publish terms and policies' },
+  'content.manage': { module: 'reference', ar: 'إدارة صفحات المساعدة والأسئلة الشائعة', en: 'Manage help and FAQ content' },
   // Settings & audit
   'settings.view': { module: 'settings', ar: 'عرض الإعدادات', en: 'View settings' },
   'settings.manage': { module: 'settings', ar: 'تعديل الإعدادات', en: 'Change settings' },

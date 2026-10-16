@@ -7,9 +7,10 @@ import { api } from '../lib/api';
 import { useAction, useGet, useSession } from '../lib/session';
 import { useTr } from '../lib/i18n';
 import { RequireLogin } from '../components/require-login';
+import { EventPicker } from '../components/event-picker';
 import { Button, Card, Empty, ErrorText, Field, Loading, Money, Notice, P, Screen } from '../components/ui';
 
-type Item = { id: string; serviceTitle: Record<string, string> | null; start: string; currentTotal: string | null; quotedTotal: string; upfrontAmount: string | null; currency: string; state: string; cancellationPolicy: { description: Record<string, string> } | null };
+type Item = { id: string; serviceTitle: Record<string, string> | null; start: string; currentTotal: string | null; quotedTotal: string; upfrontAmount: string | null; currency: string; state: string; cancellationPolicy: { description: Record<string, string> } | null; eventId: string | null };
 
 export default function CartScreen() {
   return <RequireLogin><Cart /></RequireLogin>;
@@ -41,6 +42,7 @@ function Cart() {
             {i.state === 'ok' ? <Text>{tr({ ar: 'الإجمالي', en: 'Total' })}: <Money amount={i.currentTotal} currency={i.currency} /> · {tr({ ar: 'المطلوب الآن', en: 'Due now' })}: <Money amount={i.upfrontAmount} currency={i.currency} /></Text>
               : <Notice kind="warn">{i.state === 'unavailable' ? tr({ ar: 'الموعد لم يعد متاحًا', en: 'No longer available' }) : i.state === 'price_changed' ? tr({ ar: 'تغير السعر', en: 'The price changed' }) : tr({ ar: 'غير قابل للحجز حاليًا', en: 'Not bookable right now' })}</Notice>}
             {i.cancellationPolicy && <P muted small>{localized(i.cancellationPolicy.description, lang)}</P>}
+            <EventPicker value={i.eventId} path={`/v1/cart/items/${i.id}`} />
             <Button variant="secondary" title={tr({ ar: 'إزالة', en: 'Remove' })} onPress={() => remove.mutate(i.id)} />
           </Card>
         ))}

@@ -31,7 +31,13 @@
     "scheme": "events",
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "نستخدم موقعك فقط لعرض الخدمات الأقرب إليك عند طلبك ذلك."
+        }
+      ]
     ],
     "extra": {
       "supportsRTL": true

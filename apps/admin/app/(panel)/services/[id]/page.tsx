@@ -1,7 +1,7 @@
 'use client';
 import { use } from 'react';
 import { useApp, useCan, useGet, useTr } from '@events/web-kit/client';
-import { ActionButton, Badge, Card, DataTable, Detail, ErrorBox, Json, Loading, Money, Page, reasonField, Text } from '@events/web-kit/ui';
+import { ActionButton, ApiLink, Badge, Card, DataTable, Detail, ErrorBox, Json, Loading, Money, Page, reasonField, Text } from '@events/web-kit/ui';
 import { localized } from '@events/shared';
 
 interface Service {
@@ -81,6 +81,22 @@ export default function ServicePage({ params }: { params: Promise<{ id: string }
         </Card>
       )}
       <Card title={tr({ ar: 'سياسة الإلغاء', en: 'Cancellation policy' })}>{s.cancellationPolicy ? <Json value={s.cancellationPolicy} /> : '—'}</Card>
+      <ServiceDocuments id={s.id} />
     </Page>
+  );
+}
+
+/** Documents the service type requires; opening one is recorded in the audit log. */
+function ServiceDocuments({ id }: { id: string }) {
+  const tr = useTr();
+  const { data } = useGet<{ required: string[]; documents: { id: string; docType: string; createdAt: string }[] }>(`/v1/admin/services/${id}/documents`);
+  if (!data?.required.length) return null;
+  return (
+    <Card title={tr({ ar: 'الوثائق المطلوبة', en: 'Required documents' })}>
+      <DataTable rowKey="docType" rows={data.required.map((t) => ({ docType: t, doc: data.documents.find((d) => d.docType === t) }))} columns={[
+        { key: 'docType', label: { ar: 'الوثيقة', en: 'Document' } },
+        { key: 'doc', label: { ar: 'الملف', en: 'File' }, render: (r) => r.doc ? <ApiLink path={`/v1/service-documents/${r.doc.id}/file`}>{tr({ ar: 'فتح', en: 'Open' })}</ApiLink> : <span className="badge badge-warn">{tr({ ar: 'غير مرفوعة', en: 'Missing' })}</span> },
+      ]} />
+    </Card>
   );
 }

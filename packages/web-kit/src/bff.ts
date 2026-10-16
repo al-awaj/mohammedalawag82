@@ -48,10 +48,20 @@ function parseCookies(header: string | null): Record<string, string> {
   return out;
 }
 
+/**
+ * `localhost` can resolve to the IPv6 address first (Windows, recent Node) while the API listens on IPv4,
+ * which makes every proxied call fail. Server-to-server calls use the IPv4 loopback explicitly.
+ */
+export function apiBase(url: string) {
+  return url.replace(/^(https?:\/\/)localhost(?=[:/]|$)/i, '$1127.0.0.1').replace(/\/+$/, '');
+}
+
 export function createBff(opts: BffOptions) {
+  const API = apiBase(opts.apiUrl);
   const AT = `${opts.cookiePrefix}_at`;
   const RT = `${opts.cookiePrefix}_rt`;
-  const secure = opts.secureCookies ?? process.env.NODE_ENV === 'production';
+  // COOKIE_SECURE=false allows a production build on plain http://localhost (scripts/start-local.mjs).
+  const secure = opts.secureCookies ?? (process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE !== 'false' : process.env.NODE_ENV === 'production');
   const cookie = (name: string, value: string, maxAge: number) =>
     `${name}=${encodeURIComponent(value)}; Path=/bff; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
   const setSession = (h: Headers, t: Tokens) => {
@@ -82,7 +92,7 @@ export function createBff(opts: BffOptions) {
   async function api(path: string, init: RequestInit & { token?: string } = {}) {
     const headers = new Headers(init.headers);
     if (init.token) headers.set('authorization', `Bearer ${init.token}`);
-    return fetch(`${opts.apiUrl}${path}`, { ...init, headers, redirect: 'manual', cache: 'no-store' });
+    return fetch(`${API}${path}`, { ...init, headers, redirect: 'manual', cache: 'no-store' });
   }
 
   async function refresh(rt: string, req: Request): Promise<Tokens | null> {
@@ -131,7 +141,19 @@ export function createBff(opts: BffOptions) {
     if (action === 'login' && req.method === 'POST') {
       const r = await api('/v1/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', ...forwarded(req) }, body: await req.text() });
       if (!r.ok) return new Response(await r.text(), { status: r.status, headers: { 'content-type': 'application/json' } });
+      const body = (await r.json()) as Tokens & { mfaToken?: string };
+      // Second step pending: no session yet; the page asks for the authenticator code.
+      if (body.mfaToken) return json(200, body);
+      return startSession(body, req);
+    }
+    if (action === 'mfa' && req.method === 'POST') {
+      const r = await api('/v1/auth/mfa/verify', { method: 'POST', headers: { 'content-type': 'application/json', ...forwarded(req) }, body: await req.text() });
+      if (!r.ok) return new Response(await r.text(), { status: r.status, headers: { 'content-type': 'application/json' } });
       return startSession((await r.json()) as Tokens, req);
+    }
+    if (action === 'mfa-setup' && req.method === 'POST') {
+      const r = await api('/v1/auth/mfa/setup', { method: 'POST', headers: { 'content-type': 'application/json', ...forwarded(req) }, body: await req.text() });
+      return new Response(await r.text(), { status: r.status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
     }
     if (action === 'register' && req.method === 'POST' && opts.allowRegister) {
       const body = JSON.parse((await req.text()) || '{}') as Record<string, unknown>;

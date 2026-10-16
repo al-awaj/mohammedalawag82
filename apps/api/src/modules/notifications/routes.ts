@@ -140,21 +140,22 @@ export async function notificationRoutes(app: App, deps: Deps) {
 
   // ---------------- Reminder rules (clause 48) ----------------
   app.get('/admin/reminder-rules', { ...staff, schema: { tags: ['admin:notifications'], security: sec } }, async () =>
-    (await db.query(`SELECT id, kind, days_before AS "daysBefore", country_id AS "countryId", service_type_id AS "serviceTypeId", template_key AS "templateKey", is_active AS "isActive" FROM reminder_rules ORDER BY created_at`)).rows);
+    (await db.query(`SELECT id, kind, days_before AS "daysBefore", country_id AS "countryId", service_type_id AS "serviceTypeId", template_key AS "templateKey", channel, is_active AS "isActive" FROM reminder_rules ORDER BY created_at`)).rows);
 
   app.post('/admin/reminder-rules', {
     ...staff,
     schema: {
       tags: ['admin:notifications'], security: sec,
-      body: z.object({ kind: z.enum(['before_balance_due', 'balance_overdue', 'before_event']), daysBefore: z.number().int().min(0).max(365).default(0),
-        countryId: z.uuid().nullable().default(null), serviceTypeId: z.uuid().nullable().default(null), templateKey: z.string().regex(/^[a-z][a-z0-9_.]{2,100}$/) }),
+      body: z.object({ kind: z.enum(['before_balance_due', 'balance_overdue', 'before_event', 'before_instalment_due']), daysBefore: z.number().int().min(0).max(365).default(0),
+        countryId: z.uuid().nullable().default(null), serviceTypeId: z.uuid().nullable().default(null), templateKey: z.string().regex(/^[a-z][a-z0-9_.]{2,100}$/),
+        channel: z.enum(['auto', 'sms', 'email', 'whatsapp']).default('auto') }),
     },
   }, async (req, reply) => {
     assertCan(requireUser(req), 'notifications.manage', req.body.countryId);
     const b = req.body;
     const id = await withTx(db, async (c) => {
-      const rid = (await c.query<{ id: string }>('INSERT INTO reminder_rules (kind, days_before, country_id, service_type_id, template_key) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-        [b.kind, b.daysBefore, b.countryId, b.serviceTypeId, b.templateKey])).rows[0]!.id;
+      const rid = (await c.query<{ id: string }>('INSERT INTO reminder_rules (kind, days_before, country_id, service_type_id, template_key, channel) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+        [b.kind, b.daysBefore, b.countryId, b.serviceTypeId, b.templateKey, b.channel])).rows[0]!.id;
       await audit(c, actorOf(req), { action: 'reminder_rule.created', entityType: 'reminder_rule', entityId: rid, after: b });
       return rid;
     });

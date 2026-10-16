@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { AppProviders } from '@events/web-kit/client';
+import '@events/web-kit/fonts.css';
 import '@events/web-kit/styles.css';
 import './site.css';
 import { BRAND } from '../lib/brand';

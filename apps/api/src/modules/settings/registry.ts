@@ -57,6 +57,12 @@ export const SETTINGS = {
     scopes: ['global', 'country'],
     description: { ar: 'تفعيل الدفع المباشر لصاحب الخدمة', en: 'Enable direct payment to the provider' },
   }),
+  'payments.partial_min_percent': def({
+    schema: z.number().min(1).max(100),
+    default: 100,
+    scopes: ['global', 'country'],
+    description: { ar: 'أقل نسبة من المتبقي يمكن للعميل دفعها مبكرًا كدفعة جزئية (100 = لا دفعات جزئية خارج خطة الأقساط)', en: 'Smallest share of the remaining balance a customer may pay early as a partial payment (100 = no partial payments outside an instalment plan)' },
+  }),
   'refunds.provider_cancellation_percent': def({
     schema: z.number().min(0).max(100),
     default: 100,
@@ -110,6 +116,46 @@ export const SETTINGS = {
     default: { ar: 'المنصة', en: 'Platform' },
     scopes: ['global', 'country'],
     description: { ar: 'اسم المنصة كما يظهر على الفواتير والإيصالات (يُحفظ في المستند عند إصداره)', en: 'Platform name printed on invoices and receipts (frozen into each document at issue)' },
+  }),
+  'security.staff_mfa_required': def({
+    schema: z.boolean(),
+    default: false,
+    scopes: ['global'],
+    description: { ar: 'إلزام الموظفين بالتحقق بخطوتين (رمز من تطبيق المصادقة) عند الدخول', en: 'Require staff to sign in with a second step (authenticator app code)' },
+  }),
+  'branding.name': def({
+    schema: z.object({ ar: z.string().trim().min(1).max(60), en: z.string().trim().min(1).max(60) }),
+    default: { ar: 'مناسبات', en: 'Occasions' },
+    scopes: ['global', 'country'],
+    description: { ar: 'اسم المنصة في الموقع والتطبيق', en: 'Platform name on the website and app' },
+  }),
+  'branding.primary_color': def({
+    schema: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    default: '#6d28d9',
+    scopes: ['global', 'country'],
+    description: { ar: 'اللون الأساسي للموقع (صيغة ‎#RRGGBB)', en: 'Main website colour (#RRGGBB)' },
+  }),
+  'branding.logo': def({
+    schema: z.string().regex(/^branding\/[\w./-]+$/).nullable(),
+    default: null,
+    scopes: ['global', 'country'],
+    description: { ar: 'شعار المنصة (يُرفع من صفحة الهوية والتواصل)', en: 'Platform logo (uploaded from the branding page)' },
+  }),
+  'contact.info': def({
+    schema: z.object({
+      phone: z.string().trim().max(30).optional(), whatsapp: z.string().trim().max(30).optional(), email: z.email().optional(),
+      address: z.object({ ar: z.string().max(300).optional(), en: z.string().max(300).optional() }).optional(),
+      hours: z.object({ ar: z.string().max(200).optional(), en: z.string().max(200).optional() }).optional(),
+    }).strict(),
+    default: {},
+    scopes: ['global', 'country'],
+    description: { ar: 'بيانات التواصل مع المنصة (هاتف، واتساب، بريد، عنوان، أوقات العمل)', en: 'Platform contact details (phone, WhatsApp, email, address, hours)' },
+  }),
+  'contact.social': def({
+    schema: z.object(Object.fromEntries(['instagram', 'x', 'tiktok', 'snapchat', 'facebook', 'youtube', 'linkedin'].map((k) => [k, z.url({ protocol: /^https$/ }).optional()]))).strict(),
+    default: {},
+    scopes: ['global', 'country'],
+    description: { ar: 'روابط حسابات التواصل الاجتماعي', en: 'Social media links' },
   }),
 } as const;
 

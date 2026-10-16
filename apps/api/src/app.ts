@@ -22,6 +22,7 @@ import { pendingMigrations } from './db/migrate.js';
 import { TokenService } from './lib/tokens.js';
 import type { Deps } from './deps.js';
 import { authRoutes } from './modules/auth/routes.js';
+import { mfaRoutes } from './modules/auth/mfa.js';
 import { referenceRoutes } from './modules/reference/routes.js';
 import { providerRoutes } from './modules/providers/routes.js';
 import { staffRoutes } from './modules/staff/routes.js';
@@ -29,7 +30,10 @@ import { settingsRoutes } from './modules/settings/routes.js';
 import { auditRoutes } from './modules/audit/routes.js';
 import { catalogAdminRoutes } from './modules/catalog/admin-routes.js';
 import { catalogProviderRoutes } from './modules/catalog/provider-routes.js';
+import { serviceDocumentRoutes } from './modules/catalog/service-documents.js';
 import { catalogPublicRoutes } from './modules/catalog/public-routes.js';
+import { helpRoutes } from './modules/help/routes.js';
+import { rescheduleRoutes } from './modules/booking/reschedule.js';
 import { availabilityRoutes } from './modules/availability/routes.js';
 import { bookingRoutes } from './modules/booking/routes.js';
 import { financeRoutes } from './modules/finance/routes.js';
@@ -39,6 +43,10 @@ import { promotionRoutes } from './modules/promotions/routes.js';
 import { reviewRoutes } from './modules/reviews/routes.js';
 import { reportRoutes } from './modules/reports/routes.js';
 import { documentRoutes } from './modules/documents/routes.js';
+import { contractRoutes } from './modules/documents/contracts.js';
+import { closePdf } from './lib/pdf.js';
+import { reportError } from './lib/alerts.js';
+import { accountRoutes } from './modules/auth/account.js';
 import { reconciliationRoutes } from './modules/reconciliation/routes.js';
 
 export async function buildApp(config: Config, db: Db) {
@@ -56,6 +64,8 @@ export async function buildApp(config: Config, db: Db) {
   await app.register(cors, {
     origin: config.CORS_ORIGINS ? config.CORS_ORIGINS.split(',').map((s) => s.trim()) : false,
     credentials: true,
+    // The default is GET/HEAD/POST only; the app also edits (PATCH/PUT) and removes (DELETE).
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
   });
   if (config.RATE_LIMIT_ENABLED) {
     await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
@@ -92,6 +102,7 @@ export async function buildApp(config: Config, db: Db) {
       return reply.status(status).send({ error: { code: (err as { code?: string }).code ?? 'BAD_REQUEST', message: (err as Error).message, details: null } });
     }
     req.log.error(err);
+    reportError('api', err, { route: req.routeOptions?.url, method: req.method, requestId: req.id });
     return reply.status(500).send({ error: { code: 'INTERNAL_ERROR', message: t('INTERNAL_ERROR', lang), details: null } });
   });
 
@@ -134,6 +145,8 @@ export async function buildApp(config: Config, db: Db) {
 
   await app.register(async (v1) => {
     await authRoutes(v1, deps);
+    await mfaRoutes(v1, deps);
+    await accountRoutes(v1, deps);
     await referenceRoutes(v1, deps);
     await providerRoutes(v1, deps);
     await staffRoutes(v1, deps);
@@ -141,6 +154,7 @@ export async function buildApp(config: Config, db: Db) {
     await auditRoutes(v1, deps);
     await catalogAdminRoutes(v1, deps);
     await catalogProviderRoutes(v1, deps);
+    await serviceDocumentRoutes(v1, deps);
     await catalogPublicRoutes(v1, deps);
     await availabilityRoutes(v1, deps);
     await bookingRoutes(v1, deps);
@@ -151,8 +165,12 @@ export async function buildApp(config: Config, db: Db) {
     await reviewRoutes(v1, deps);
     await reportRoutes(v1, deps);
     await documentRoutes(v1, deps);
+    await contractRoutes(v1, deps);
     await reconciliationRoutes(v1, deps);
+    await helpRoutes(v1, deps);
+    await rescheduleRoutes(v1, deps);
   }, { prefix: '/v1' });
 
+  app.addHook('onClose', async () => { await closePdf(); });
   return app;
 }

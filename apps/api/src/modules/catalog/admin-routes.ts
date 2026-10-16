@@ -9,6 +9,7 @@ import { i18nTextSchema, idParams, paginationQuery, reasonSchema } from '../comm
 import { checkFieldDefinition, DATA_TYPES, optionSchema, validationSchema } from './fields.js';
 import { POLICY_COLUMNS, policyBody, policyParams } from './policies.js';
 import { serviceDetail } from './queries.js';
+import { importStarterCatalog, STARTER_CATALOG } from './starter.js';
 import { MODERATION, PRICING_UNITS, recordServiceStatus, type ModerationAction, type ServiceStatus } from './shared.js';
 
 const sec = [{ bearer: [] }];
@@ -60,15 +61,17 @@ const typeFields = z.object({
   minDepositPercent: z.number().min(0).max(100).nullable(),
   providerCanCreate: z.boolean(),
   isActive: z.boolean(),
+  /** Platform policy applied to services of this type whose provider picks none. */
+  defaultCancellationPolicyId: z.uuid().nullable(),
 });
 const typeCreate = typeFields.extend({
   description: i18nTextSchema.nullable().default(null), icon: z.string().max(100).nullable().default(null),
   capacityMode: z.enum(['none', 'guests', 'units']).default('none'), defaultRequiresApproval: z.boolean().default(true),
   defaultDurationMinutes: z.number().int().positive().nullable().default(null), bufferBeforeMinutes: z.number().int().min(0).default(0),
   bufferAfterMinutes: z.number().int().min(0).default(0), allowsPackages: z.boolean().default(true), minImages: z.number().int().min(0).max(50).default(0),
-  maxImages: z.number().int().min(1).max(100).default(30), allowsVideo: z.boolean().default(true), requiredDocuments: z.array(z.string()).default([]),
+  maxImages: z.number().int().min(1).max(100).default(30), allowsVideo: z.boolean().default(true), requiredDocuments: z.array(z.string().regex(/^[a-z_]{2,50}$/)).max(20).default([]),
   depositRequired: z.boolean().default(false), minDepositPercent: z.number().min(0).max(100).nullable().default(null),
-  providerCanCreate: z.boolean().default(true), isActive: z.boolean().default(true),
+  providerCanCreate: z.boolean().default(true), isActive: z.boolean().default(true), defaultCancellationPolicyId: z.uuid().nullable().default(null),
   fields: z.array(fieldBody).max(100).default([]),
 });
 
@@ -78,8 +81,15 @@ const TYPE_COLUMNS: Record<string, string> = {
   bufferBeforeMinutes: 'buffer_before_minutes', bufferAfterMinutes: 'buffer_after_minutes', pricingUnits: 'pricing_units',
   allowsPackages: 'allows_packages', minImages: 'min_images', maxImages: 'max_images', allowsVideo: 'allows_video',
   requiredDocuments: 'required_documents', depositRequired: 'deposit_required', minDepositPercent: 'min_deposit_percent',
-  providerCanCreate: 'provider_can_create', isActive: 'is_active',
+  providerCanCreate: 'provider_can_create', isActive: 'is_active', defaultCancellationPolicyId: 'default_cancellation_policy_id',
 };
+
+/** A type default must be an active platform policy (not one owned by a provider). */
+async function assertPlatformPolicy(c: { query: Deps['db']['query'] }, id: string | null | undefined) {
+  if (!id) return;
+  const r = await c.query('SELECT 1 FROM cancellation_policies WHERE id = $1 AND provider_id IS NULL AND is_active', [id]);
+  if (!r.rowCount) throw badRequest('VALIDATION_FAILED', [{ path: '/defaultCancellationPolicyId', message: 'must be an active platform policy' }]);
+}
 const JSON_COLUMNS = new Set(['name', 'description']);
 
 function validateFieldDef(f: z.infer<typeof fieldBody>) {
@@ -177,6 +187,31 @@ export async function catalogAdminRoutes(app: App, deps: Deps) {
     });
   });
 
+  // ---------------- Starter catalog ----------------
+  /** What the starter set contains and which parts already exist here. */
+  app.get('/admin/catalog/starter', { ...auth, preValidation: requirePermission('categories.manage'), schema: { tags: ['admin:catalog'], security: sec } }, async () => {
+    const cats = new Set((await db.query<{ slug: string }>('SELECT slug FROM service_categories')).rows.map((r) => r.slug));
+    const types = new Set((await db.query<{ code: string }>('SELECT code FROM service_types')).rows.map((r) => r.code));
+    return STARTER_CATALOG.map((c) => ({
+      slug: c.slug, name: c.name, exists: cats.has(c.slug),
+      types: c.types.map((t) => ({ code: t.code, name: t.name, bookingMode: t.bookingMode, requiredDocuments: t.requiredDocuments ?? [], fields: t.fields.length, exists: types.has(t.code) })),
+    }));
+  });
+
+  app.post('/admin/catalog/starter', {
+    ...auth, preValidation: requirePermission('categories.manage'),
+    schema: { tags: ['admin:catalog'], security: sec, body: z.object({ countryIds: z.array(z.uuid()).min(1).max(50), reason: reasonSchema }) },
+  }, async (req) => {
+    assertCan(requireUser(req), 'categories.manage');
+    assertCan(requireUser(req), 'service_types.manage');
+    return withTx(db, async (c) => {
+      const found = (await c.query('SELECT id FROM countries WHERE id = ANY($1)', [req.body.countryIds])).rowCount;
+      if (found !== new Set(req.body.countryIds).size) throw badRequest('VALIDATION_FAILED', [{ path: '/countryIds', message: 'unknown country' }]);
+      await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['catalog:starter']);
+      return importStarterCatalog(c, req.body.countryIds, actorOf(req), req.body.reason);
+    });
+  });
+
   // ---------------- Service types and their dynamic fields ----------------
   app.get('/admin/service-types', { ...auth, preValidation: requirePermission('service_types.manage'), schema: { tags: ['admin:catalog'], security: sec } },
     async () => (await db.query(
@@ -205,16 +240,18 @@ export async function catalogAdminRoutes(app: App, deps: Deps) {
     b.fields.forEach(validateFieldDef);
     if (new Set(b.fields.map((f) => f.key)).size !== b.fields.length) throw badRequest('FIELD_DEFINITION_INVALID', { message: 'duplicate field keys' });
     const id = await withTx(db, async (c) => {
+      await assertPlatformPolicy(c, b.defaultCancellationPolicyId);
       let typeId: string;
       try {
         typeId = (await c.query<{ id: string }>(
           `INSERT INTO service_types (category_id, code, name, description, icon, booking_mode, capacity_mode, default_requires_approval,
              default_duration_minutes, buffer_before_minutes, buffer_after_minutes, pricing_units, allows_packages, min_images, max_images,
-             allows_video, required_documents, deposit_required, min_deposit_percent, provider_can_create, is_active)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id`,
+             allows_video, required_documents, deposit_required, min_deposit_percent, provider_can_create, is_active, default_cancellation_policy_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id`,
           [b.categoryId, b.code, JSON.stringify(b.name), b.description ? JSON.stringify(b.description) : null, b.icon, b.bookingMode, b.capacityMode,
             b.defaultRequiresApproval, b.defaultDurationMinutes, b.bufferBeforeMinutes, b.bufferAfterMinutes, b.pricingUnits, b.allowsPackages,
-            b.minImages, b.maxImages, b.allowsVideo, b.requiredDocuments, b.depositRequired, b.minDepositPercent, b.providerCanCreate, b.isActive],
+            b.minImages, b.maxImages, b.allowsVideo, b.requiredDocuments, b.depositRequired, b.minDepositPercent, b.providerCanCreate, b.isActive,
+            b.defaultCancellationPolicyId],
         )).rows[0]!.id;
       } catch (err) { mapUniqueViolation(err, { service_types_code: 'CODE_TAKEN' }); }
       for (const f of b.fields) await insertField(c, typeId, f);
@@ -249,6 +286,7 @@ export async function catalogAdminRoutes(app: App, deps: Deps) {
         const used = await c.query('SELECT 1 FROM services WHERE service_type_id = $1 LIMIT 1', [req.params.id]);
         if (used.rowCount) throw conflict('FIELD_TYPE_LOCKED', { field: 'bookingMode' });
       }
+      await assertPlatformPolicy(c, b.defaultCancellationPolicyId);
       const sets: string[] = [];
       const params: unknown[] = [req.params.id];
       for (const [k, v] of Object.entries(b)) {

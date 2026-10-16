@@ -8,7 +8,7 @@ import { RequireCustomer } from '@/lib/account';
 
 type Booking = { id: string; number: string; status: string; serviceTitle: Record<string, string>; startAt: string; total: string; upfrontAmount: string; paidAmount: string; remainingAmount: string; currency: string; holdExpiresAt: string | null; approvalDeadline: string | null; balanceDueAt: string | null };
 type Order = { id: string; number: string; currency: string; total: string; upfrontTotal: string; bookings: Booking[] };
-type Option = { purpose: 'upfront' | 'balance'; model: 'platform' | 'direct'; method: string; proofRequired: boolean; currency: string; bookingIds: string[]; amount: string };
+type Option = { purpose: 'upfront' | 'balance'; model: 'platform' | 'direct'; method: string; proofRequired: boolean; currency: string; bookingIds: string[]; amount: string; minAmount: string | null; nextInstalmentAmount: string | null };
 type Payment = { id: string; number: string; model: string; method: string; purpose: string; amount: string; currency: string; status: string; checkoutUrl: string | null; instructions: Record<string, string> | null; reportedAmount: string | null; verifiedAmount: string | null; failureReason: string | null; proofCount: number; createdAt: string };
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
@@ -28,10 +28,10 @@ function OrderView({ id }: { id: string }) {
   if (order.error || !order.data) return <ErrorBox error={order.error} />;
   const o = order.data;
   const inProgress = (payments.data ?? []).filter((p) => p.status === 'pending' || p.status === 'awaiting_verification');
-  const start = async (opt: Option) => {
+  const start = async (opt: Option, amount?: string) => {
     setBusy(true); setErr(null);
     try {
-      const p = await api.post<Payment>(`/v1/orders/${id}/payments`, { model: opt.model, method: opt.method, purpose: opt.purpose, bookingIds: opt.bookingIds }, { 'idempotency-key': crypto.randomUUID() });
+      const p = await api.post<Payment>(`/v1/orders/${id}/payments`, { model: opt.model, method: opt.method, purpose: opt.purpose, bookingIds: opt.bookingIds, ...(amount && amount !== opt.amount ? { amount } : {}) }, { 'idempotency-key': crypto.randomUUID() });
       await payments.refetch(); await options.refetch();
       if (p.checkoutUrl && opt.method !== 'bank_transfer') window.open(p.checkoutUrl, '_blank', 'noopener');
     } catch (e) { setErr(e); } finally { setBusy(false); }
@@ -63,7 +63,9 @@ function OrderView({ id }: { id: string }) {
                 <div className="stat-label">{opt.purpose === 'upfront' ? tr({ ar: 'العربون / المبلغ المقدم', en: 'Deposit / upfront' }) : tr({ ar: 'المبلغ المتبقي', en: 'Remaining balance' })}</div>
                 <div className="stat-value"><Money amount={opt.amount} currency={opt.currency} /></div>
                 <div className="small muted">{enumLabel('paymentMethod', opt.method, lang)} · {enumLabel('paymentModel', opt.model, lang)}</div>
-                <Button variant="primary" disabled={busy} onClick={() => start(opt)}>{tr({ ar: 'ادفع بهذه الطريقة', en: 'Pay this way' })}</Button>
+                {opt.purpose === 'balance' && (opt.nextInstalmentAmount || (opt.minAmount && opt.minAmount !== opt.amount))
+                  ? <PartialPay opt={opt} busy={busy} onPay={(a) => start(opt, a)} />
+                  : <Button variant="primary" disabled={busy} onClick={() => start(opt)}>{tr({ ar: 'ادفع بهذه الطريقة', en: 'Pay this way' })}</Button>}
               </div>
             ))}
           </div>
@@ -90,5 +92,30 @@ function OrderView({ id }: { id: string }) {
       </Card>
       <p><Link href="/account/bookings">{tr({ ar: 'كل حجوزاتي', en: 'All my bookings' })}</Link></p>
     </Page>
+  );
+}
+
+/** Paying part of the balance: the next instalment, the full remainder, or any amount from the admin's minimum (clauses 46-47). */
+function PartialPay({ opt, busy, onPay }: { opt: Option; busy: boolean; onPay: (amount: string) => void }) {
+  const tr = useTr();
+  const [amount, setAmount] = useState(opt.nextInstalmentAmount ?? opt.amount);
+  const flexible = !!opt.minAmount && opt.minAmount !== opt.amount;
+  return (
+    <div className="partial-pay" data-testid="partial-pay">
+      <div className="row gap wrap">
+        {opt.nextInstalmentAmount && <button type="button" className={`pick${amount === opt.nextInstalmentAmount ? ' pick-active' : ''}`} onClick={() => setAmount(opt.nextInstalmentAmount!)}>
+          {tr({ ar: 'القسط التالي', en: 'Next instalment' })}: <Money amount={opt.nextInstalmentAmount} currency={opt.currency} /></button>}
+        <button type="button" className={`pick${amount === opt.amount ? ' pick-active' : ''}`} onClick={() => setAmount(opt.amount)}>
+          {tr({ ar: 'كامل المتبقي', en: 'Full balance' })}</button>
+      </div>
+      {flexible && (
+        <label className="field">
+          <span>{tr({ ar: 'أو أدخل مبلغًا', en: 'Or enter an amount' })}</span>
+          <input id="f-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.trim())} />
+          <small className="muted">{tr({ ar: 'الحد الأدنى', en: 'Minimum' })} <Money amount={opt.minAmount} currency={opt.currency} /></small>
+        </label>
+      )}
+      <Button variant="primary" disabled={busy || !amount} onClick={() => onPay(amount)}>{tr({ ar: 'ادفع', en: 'Pay' })} {/^\d+(\.\d+)?$/.test(amount) && <Money amount={amount} currency={opt.currency} />}</Button>
+    </div>
   );
 }

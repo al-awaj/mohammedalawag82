@@ -4,8 +4,10 @@ import { withTx, type Db, type Executor } from '../../db/pool.js';
 import { audit, type ActorContext } from '../../lib/audit.js';
 import { AppError, badRequest, conflict, mapUniqueViolation, notFound, unauthorized } from '../../lib/errors.js';
 import { enqueueMessage } from '../../lib/outbox.js';
+import { notifyUser } from '../../lib/notify.js';
 import { getDummyHash, hashPassword, verifyPassword } from '../../lib/password.js';
 import { randomOtp, randomToken, sha256, type TokenService } from '../../lib/tokens.js';
+import { getSetting } from '../settings/registry.js';
 
 const OTP_TTL_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
@@ -27,6 +29,9 @@ export interface SessionTokens {
   refreshToken: string;
   expiresIn: number;
 }
+
+/** Second sign-in step: a code from an authenticator app (or setting one up when it is required). */
+export interface MfaChallenge { mfaRequired?: true; mfaSetupRequired?: true; mfaToken: string }
 
 interface CountryRow { id: string; phone_prefix: string; is_active: boolean }
 
@@ -80,12 +85,13 @@ export class AuthService {
         after: { kind: input.accountType, countryCode: input.countryCode, phone: input.phone, email: input.email ?? null },
       });
       await this.issueCode(c, id, 'verify_phone', 'sms', input.phone, input.preferredLanguage);
+      await notifyUser(c, id, input.accountType === 'provider' ? 'account.welcome_provider' : 'account.welcome', { name: input.fullName });
       return id;
     });
     return { userId, ...(await this.createSession(this.db, userId, input.accountType, ctx)) };
   }
 
-  async login(identifier: string, password: string, ctx: ActorContext): Promise<SessionTokens> {
+  async login(identifier: string, password: string, ctx: ActorContext): Promise<SessionTokens | MfaChallenge> {
     const isEmail = identifier.includes('@');
     const { rows } = await this.db.query<{
       id: string; kind: 'customer' | 'provider' | 'staff'; status: string; locked_until: Date | null;
@@ -122,6 +128,18 @@ export class AuthService {
       throw unauthorized('AUTH_INVALID_CREDENTIALS');
     }
     if (user.status !== 'active') throw new AppError('AUTH_ACCOUNT_DISABLED', 403);
+
+    const mfa = (await this.db.query<{ enabled_at: Date | null }>('SELECT enabled_at FROM user_mfa WHERE user_id = $1', [user.id])).rows[0];
+    const purpose = mfa?.enabled_at ? 'verify' : user.kind === 'staff' && await getSetting(this.db, 'security.staff_mfa_required') ? 'setup' : null;
+    if (purpose) {
+      const mfaToken = randomToken();
+      await withTx(this.db, async (c) => {
+        await c.query(`INSERT INTO mfa_challenges (token_hash, user_id, purpose, expires_at) VALUES ($1, $2, $3, now() + interval '5 minutes')`, [sha256(mfaToken), user.id, purpose]);
+        await c.query('UPDATE users SET failed_login_count = 0, locked_until = NULL WHERE id = $1', [user.id]);
+        await audit(c, { ...ctx, actorId: user.id, actorKind: user.kind }, { action: 'auth.password_ok_mfa_pending', entityType: 'user', entityId: user.id, after: { purpose } });
+      });
+      return purpose === 'verify' ? { mfaRequired: true, mfaToken } : { mfaSetupRequired: true, mfaToken };
+    }
 
     return withTx(this.db, async (c) => {
       await c.query('UPDATE users SET failed_login_count = 0, locked_until = NULL, last_login_at = now() WHERE id = $1', [user.id]);
@@ -239,6 +257,13 @@ export class AuthService {
       await c.query('UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
       await audit(c, ctx, { action: 'auth.password_changed', entityType: 'user', entityId: userId });
     });
+  }
+
+  /** A session after the second sign-in step succeeded. */
+  async sessionAfterMfa(exec: Executor, userId: string, kind: 'customer' | 'provider' | 'staff', ctx: ActorContext): Promise<SessionTokens> {
+    await exec.query('UPDATE users SET last_login_at = now() WHERE id = $1', [userId]);
+    await audit(exec, { ...ctx, actorId: userId, actorKind: kind }, { action: 'auth.login', entityType: 'user', entityId: userId, after: { mfa: true } });
+    return this.createSession(exec, userId, kind, ctx);
   }
 
   private async createSession(

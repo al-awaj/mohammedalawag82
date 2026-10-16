@@ -7,10 +7,11 @@ import { notFound } from '../../lib/errors.js';
 import { idParams, paginationQuery } from '../common.js';
 import { partyRole } from '../disputes/service.js';
 import { renderHtml } from './render.js';
+import { htmlToPdf } from '../../lib/pdf.js';
 import { balanceNotice, bookingStatement, disputeRecord, paymentHistory, type DocumentRow } from './service.js';
 
 const sec = [{ bearer: [] }];
-const view = z.object({ format: z.enum(['json', 'html']).default('json'), lang: z.enum(['ar', 'en']).default('ar') });
+const view = z.object({ format: z.enum(['json', 'html', 'pdf']).default('json'), lang: z.enum(['ar', 'en']).default('ar') });
 
 const COLUMNS = `d.id, d.number, d.kind, d.country_id AS "countryId", d.source_type AS "sourceType", d.booking_id AS "bookingId",
   d.currency_code AS currency, d.total, d.issued_at AS "issuedAt"`;
@@ -31,8 +32,13 @@ async function bookingAccess(c: Executor, req: FastifyRequest, bookingId: string
   if (!b || !(await canSee(c, req, b))) throw notFound();
 }
 
-function send(reply: FastifyReply, payload: { kind: string; number?: string | null; issuedAt?: unknown; data: Record<string, unknown> }, q: z.infer<typeof view>) {
+async function send(reply: FastifyReply, payload: { kind: string; number?: string | null; issuedAt?: unknown; data: Record<string, unknown> }, q: z.infer<typeof view>) {
   if (q.format === 'html') return reply.header('content-type', 'text/html; charset=utf-8').send(renderHtml(payload, q.lang));
+  if (q.format === 'pdf') {
+    const pdf = await htmlToPdf(renderHtml(payload, q.lang));
+    return reply.header('content-type', 'application/pdf').header('cache-control', 'private, no-store')
+      .header('content-disposition', `inline; filename="${payload.number ?? payload.kind}.pdf"`).send(pdf);
+  }
   return reply.send(payload.number ? { id: (payload as { id?: string }).id, number: payload.number, kind: payload.kind, issuedAt: payload.issuedAt, data: payload.data } : payload.data);
 }
 

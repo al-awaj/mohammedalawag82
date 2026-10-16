@@ -24,7 +24,7 @@ test('a customer books and pays from the mobile app, then cancels', async ({ pag
   const cust = await user(c.code, 'customer');
   await page.addInitScript((code) => localStorage.setItem('country', code), c.code);
   await page.goto(`${APP}/`);
-  await expect(page.getByText('كل خدمات مناسبتك في مكان واحد')).toBeVisible();
+  await expect(page.getByText('كل ما تحتاجه لمناسبتك في مكان واحد')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
 
   // Sign in.

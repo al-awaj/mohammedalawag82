@@ -3,7 +3,8 @@ import type { Config } from '../../config.js';
 import { withTx, type Db, type Executor } from '../../db/pool.js';
 import { audit, systemActor, type ActorContext } from '../../lib/audit.js';
 import { AppError, badRequest, conflict, notFound } from '../../lib/errors.js';
-import { fromUnits, min, toUnits } from '../../lib/money.js';
+import { fromUnits, min, mulRate, percentOf, roundToMinor, toUnits } from '../../lib/money.js';
+import { findRate } from '../reference/routes.js';
 import { enqueueMessage } from '../../lib/outbox.js';
 import { confirmAfterPayment } from '../booking/service.js';
 import { getSetting } from '../settings/registry.js';
@@ -19,13 +20,13 @@ export type Purpose = 'upfront' | 'balance';
 
 interface PayableBooking {
   id: string; number: string; status: string; provider_id: string; service_type_id: string; total: string; upfront_amount: string;
-  currency_code: string; paid: string; pending: string;
+  currency_code: string; paid: string; pending: string; instalment_plan: { seq: number; amount: string; dueAt: string }[] | null;
 }
 
 /** Bookings of an order with what is paid (verified) and what is tied up in payments still in progress. */
 async function orderBookings(c: Executor, orderId: string, bookingIds?: string[]) {
   return (await c.query<PayableBooking>(
-    `SELECT b.id, b.number, b.status, b.provider_id, s.service_type_id, b.total, b.upfront_amount, b.currency_code,
+    `SELECT b.id, b.number, b.status, b.provider_id, s.service_type_id, b.total, b.upfront_amount, b.currency_code, b.instalment_plan,
             coalesce((SELECT sum(a.verified_amount) FROM payment_allocations a JOIN payments p ON p.id = a.payment_id
                        WHERE a.booking_id = b.id AND p.status = 'succeeded'), 0)::numeric(20,4)::text AS paid,
             coalesce((SELECT sum(a.amount) FROM payment_allocations a JOIN payments p ON p.id = a.payment_id
@@ -46,6 +47,32 @@ function dueFor(b: PayableBooking, purpose: Purpose): bigint {
   if (!['confirmed', 'in_progress'].includes(b.status)) return 0n;
   const d = toUnits(b.total) - paid;
   return d > 0n ? d : 0n;
+}
+
+/** What closes the next unpaid instalment of a booking (0 without a plan or once the plan is paid). */
+function nextInstalment(b: PayableBooking): bigint {
+  if (!b.instalment_plan?.length || !['confirmed', 'in_progress'].includes(b.status)) return 0n;
+  const paid = toUnits(b.paid);
+  let target = toUnits(b.upfront_amount);
+  for (const i of [...b.instalment_plan].sort((x, y) => x.seq - y.seq)) {
+    target += toUnits(i.amount);
+    if (target > paid) return target - paid;
+  }
+  return 0n;
+}
+
+/**
+ * Limits for paying part of the balance (clauses 46-47): the customer may pay the next instalment, or any amount
+ * of at least the admin's minimum share of what remains, up to the full remainder.
+ */
+async function balanceLimits(c: Executor, countryId: string, currency: string, bookings: PayableBooking[]) {
+  const due = bookings.reduce((s, b) => s + dueFor(b, 'balance'), 0n);
+  const next = bookings.reduce((s, b) => s + nextInstalment(b), 0n);
+  const pct = await getSetting(c, 'payments.partial_min_percent', countryId);
+  const minor = (await c.query<{ minor_units: number }>('SELECT minor_units FROM currencies WHERE code = $1', [currency])).rows[0]!.minor_units;
+  let minAmount = roundToMinor(percentOf(due, String(pct)), minor);
+  if (minAmount > due) minAmount = due;
+  return { due, next: next > 0n && next < due ? next : 0n, minAmount, minor };
 }
 
 interface RuleRow { id: string; service_type_id: string | null; model: Model; method: Method; integration_id: string | null; account_id: string | null; proof_required: boolean }
@@ -95,9 +122,12 @@ export async function paymentOptions(db: Db, orderId: string, customerId: string
       for (const g of groups) {
         const rule = await resolveRule(db, o.country_id, g, model, method);
         if (!rule) continue;
+        const limits = purpose === 'balance' ? await balanceLimits(db, o.country_id, o.currency_code.trim(), g) : null;
         options.push({
           purpose, model, method, proofRequired: rule.proof_required, currency: o.currency_code.trim(),
           bookingIds: g.map((b) => b.id), amount: fromUnits(g.reduce((s, b) => s + dueFor(b, purpose), 0n)),
+          minAmount: limits ? fromUnits(limits.minAmount) : null,
+          nextInstalmentAmount: limits && limits.next > 0n ? fromUnits(limits.next) : null,
         });
       }
     }
@@ -113,6 +143,8 @@ async function recordStatus(c: Executor, paymentId: string, from: string | null,
 export interface CreatePaymentInput {
   orderId: string; customerId: string; model: Model; method: Method; purpose: Purpose; bookingIds?: string[] | undefined;
   reportedAmount?: string | undefined; idempotencyKey: string;
+  /** Part of the balance to pay now (balance only); defaults to everything due. */
+  amount?: string | undefined;
 }
 
 /**
@@ -138,7 +170,20 @@ export async function createPayment(db: Db, config: Config, input: CreatePayment
 
     const rule = await resolveRule(c, o.country_id, due, input.model, input.method);
     if (!rule) throw badRequest('PAYMENT_METHOD_NOT_AVAILABLE');
-    const amount = due.reduce((s, b) => s + dueFor(b, input.purpose), 0n);
+    const fullDue = due.reduce((s, b) => s + dueFor(b, input.purpose), 0n);
+    let amount = fullDue;
+    // Allocation per booking, earliest booking first.
+    let shares = due.map((b) => ({ b, amount: dueFor(b, input.purpose) }));
+    if (input.amount !== undefined) {
+      if (input.purpose !== 'balance') throw badRequest('VALIDATION_FAILED', [{ path: '/amount', message: 'only the balance can be paid in parts' }]);
+      const want = toUnits(input.amount);
+      const lim = await balanceLimits(c, o.country_id, o.currency_code.trim(), due);
+      if (want <= 0n || want > fullDue || roundToMinor(want, lim.minor) !== want) throw badRequest('PAYMENT_AMOUNT_INVALID', { max: fromUnits(fullDue) });
+      if (want < lim.minAmount && want !== lim.next) throw badRequest('PAYMENT_AMOUNT_TOO_SMALL', { min: fromUnits(lim.minAmount), nextInstalment: lim.next > 0n ? fromUnits(lim.next) : null });
+      amount = want;
+      let left = want;
+      shares = shares.map((x) => { const take = min(left, x.amount); left -= take; return { b: x.b, amount: take }; }).filter((x) => x.amount > 0n);
+    }
     const gateway = input.model === 'platform' && (input.method === 'card' || input.method === 'wallet');
     const status = gateway ? 'pending' : 'awaiting_verification';
     const reported = input.reportedAmount ? toUnits(input.reportedAmount) : amount;
@@ -148,11 +193,11 @@ export async function createPayment(db: Db, config: Config, input: CreatePayment
       `INSERT INTO payments (order_id, customer_id, country_id, provider_id, rule_id, model, method, integration_id, account_id, purpose, amount, currency_code,
                              reported_amount, status, idempotency_key)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id, number`,
-      [o.id, input.customerId, o.country_id, input.model === 'direct' ? due[0]!.provider_id : null, rule.id, input.model, input.method,
+      [o.id, input.customerId, o.country_id, input.model === 'direct' ? shares[0]!.b.provider_id : null, rule.id, input.model, input.method,
         rule.integration_id, rule.account_id, input.purpose, fromUnits(amount), o.currency_code.trim(), gateway ? null : fromUnits(reported), status,
         input.idempotencyKey])).rows[0]!;
-    for (const b of due) {
-      await c.query('INSERT INTO payment_allocations (payment_id, booking_id, amount) VALUES ($1, $2, $3)', [p.id, b.id, fromUnits(dueFor(b, input.purpose))]);
+    for (const { b, amount: share } of shares) {
+      await c.query('INSERT INTO payment_allocations (payment_id, booking_id, amount) VALUES ($1, $2, $3)', [p.id, b.id, fromUnits(share)]);
     }
     await recordStatus(c, p.id, null, status, ctx, null);
 
@@ -183,7 +228,38 @@ async function lockPayment(c: Executor, id: string): Promise<PaymentRow> {
  * once, and bookings whose upfront amount is covered are confirmed. Safe to call twice: a payment that
  * already succeeded is left untouched (duplicate notices, clause 36).
  */
-export async function markSucceeded(c: pg.PoolClient, paymentId: string, verified: string, fee: string, ctx: ActorContext): Promise<{ changed: boolean }> {
+/** Money received in another currency, as entered by finance staff (clause 11). */
+export interface ReceivedInput { currency: string; amount: string; rate?: string | undefined; rateSource?: string | undefined; conversionFee?: string | undefined }
+
+/**
+ * Converts what was received into the booking currency with the stored (or entered) rate. The exchange difference is
+ * what was credited to the customer minus the converted value; it is booked to the FX account, never hidden in the fund.
+ */
+async function conversion(c: Executor, p: PaymentRow, verified: string, r: ReceivedInput, ctx: ActorContext) {
+  const cur = p.currency_code.trim();
+  const minor = (await c.query<{ m: number }>('SELECT minor_units AS m FROM currencies WHERE code = $1', [cur])).rows[0]!.m;
+  let rate = r.rate ?? null;
+  let source = r.rateSource ?? null;
+  let rateAt = new Date();
+  let rateId: string | null = null;
+  if (r.currency === cur) { rate = '1'; source = 'same currency'; }
+  if (!rate) {
+    const found = await findRate(c, r.currency, cur);
+    if (!found) throw badRequest('FX_RATE_MISSING', { from: r.currency, to: cur });
+    rate = found.rate; source = found.source; rateAt = found.effectiveAt; rateId = found.id;
+  } else if (!source) source = `entered by staff ${ctx.actorId ?? ''}`.trim();
+  const converted = roundToMinor(mulRate(toUnits(r.amount), rate), minor);
+  const fee = r.conversionFee ? toUnits(r.conversionFee) : 0n;
+  if (fee >= converted) throw badRequest('VALIDATION_FAILED', [{ path: '/received/conversionFee', message: 'must be below the converted amount' }]);
+  const difference = toUnits(verified) - converted;
+  await c.query(
+    `UPDATE payments SET received_currency = $2, received_amount = $3, fx_rate = $4, fx_rate_at = $5, fx_rate_source = $6, fx_rate_id = $7,
+            converted_amount = $8, fx_conversion_fee = $9, fx_difference = $10 WHERE id = $1`,
+    [p.id, r.currency, r.amount, rate, rateAt, source, rateId, fromUnits(converted), fromUnits(fee), fromUnits(difference)]);
+  return { fee, difference };
+}
+
+export async function markSucceeded(c: pg.PoolClient, paymentId: string, verified: string, fee: string, ctx: ActorContext, received?: ReceivedInput): Promise<{ changed: boolean }> {
   const p = await lockPayment(c, paymentId);
   if (p.status === 'succeeded') return { changed: false };
   if (!['pending', 'awaiting_verification'].includes(p.status)) throw conflict('INVALID_STATUS_TRANSITION', { from: p.status });
@@ -202,14 +278,21 @@ export async function markSucceeded(c: pg.PoolClient, paymentId: string, verifie
   }
   await c.query(`UPDATE payments SET status = 'succeeded', verified_amount = $2, gateway_fee = $3, succeeded_at = now() WHERE id = $1`, [p.id, verified, fee]);
   await recordStatus(c, p.id, p.status, 'succeeded', ctx, null);
+  const fx = received ? await conversion(c, p, verified, received, ctx) : { fee: 0n, difference: 0n };
 
   // ---- Ledger (docs/05-financial-design.md §3-4)
   const cur = p.currency_code.trim();
+  const fundIn = toUnits(verified) - toUnits(fee) - fx.fee - fx.difference;
+  if (p.model === 'platform' && fundIn <= 0n) throw badRequest('VALIDATION_FAILED', [{ path: '/received', message: 'the received value does not cover the fees' }]);
   const lines = p.model === 'platform'
     ? [
-        { accountId: p.account_id!, debit: fromUnits(toUnits(verified) - toUnits(fee)), currency: cur, paymentId: p.id },
-        // Provider fees are an expense of the platform, never booked as commission (clause 41.6).
-        { accountId: await systemAccount(c, p.country_id, cur, 'gateway_fees'), debit: fee, currency: cur, paymentId: p.id },
+        { accountId: p.account_id!, debit: fromUnits(fundIn), currency: cur, paymentId: p.id },
+        // Provider fees are an expense of the platform, never booked as commission (clause 41.6); so is a bank's conversion fee.
+        { accountId: await systemAccount(c, p.country_id, cur, 'gateway_fees'), debit: fromUnits(toUnits(fee) + fx.fee), currency: cur, paymentId: p.id },
+        ...(fx.difference !== 0n ? [{
+          accountId: await systemAccount(c, p.country_id, cur, 'fx_difference'), currency: cur, paymentId: p.id, memo: 'exchange difference',
+          ...(fx.difference > 0n ? { debit: fromUnits(fx.difference) } : { credit: fromUnits(-fx.difference) }),
+        }] : []),
         ...await Promise.all(applied.map(async (x) => ({ accountId: await systemAccount(c, p.country_id, cur, 'customer_advances'), credit: fromUnits(x.amount), currency: cur, paymentId: p.id, bookingId: x.bookingId, providerId: x.providerId }))),
       ]
     : (await Promise.all(applied.map(async (x) => [
@@ -348,7 +431,7 @@ export async function handleWebhook(db: Db, config: Config, integrationId: strin
 }
 
 /** Staff decision on a proof / manual payment (clause 33: reviewer and verified amount recorded). */
-export async function reviewPayment(db: Db, paymentId: string, decision: 'approve' | 'reject', verifiedAmount: string | undefined, note: string, ctx: ActorContext) {
+export async function reviewPayment(db: Db, paymentId: string, decision: 'approve' | 'reject', verifiedAmount: string | undefined, note: string, ctx: ActorContext, received?: ReceivedInput) {
   return withTx(db, async (c) => {
     const p = await lockPayment(c, paymentId);
     if (p.status !== 'awaiting_verification') throw conflict('INVALID_STATUS_TRANSITION', { from: p.status });
@@ -363,7 +446,7 @@ export async function reviewPayment(db: Db, paymentId: string, decision: 'approv
       if (!proofs.rowCount) throw conflict('PROOF_REQUIRED');
     }
     await c.query('UPDATE payments SET verified_by = $2, verified_at = now(), review_note = $3 WHERE id = $1', [p.id, ctx.actorId, note]);
-    await markSucceeded(c, p.id, verifiedAmount ?? p.amount, '0', ctx);
+    await markSucceeded(c, p.id, verifiedAmount ?? p.amount, '0', ctx, received);
     return { status: 'succeeded' };
   });
 }
